@@ -1,0 +1,35 @@
+{
+  "name": "sealed-evals",
+  "version": "1.0.0",
+  "description": "Sealed Evals: hidden AI benchmarks scored inside a TEE, paid per run on NEAR",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "tsx dist/index.js",
+    "test": "node --import tsx --import ./test/env.ts --test test/*.test.ts",
+    "build:web": "cd frontend && npm ci && npm run build && rm -rf ../public && cp -r dist ../public"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.0.1",
+    "@neardefi/shade-agent-js": "2.2.0",
+    "@noble/ciphers": "1.3.0",
+    "@noble/curves": "1.9.7",
+    "@noble/hashes": "1.8.0",
+    "@phala/dstack-sdk": "0.5.7",
+    "cors": "2.8.6",
+    "dotenv": "17.4.2",
+    "ethers": "6.16.0",
+    "hono": "4.12.16",
+    "tsx": "4.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.39",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "@noble/curves": "1.9.7"
+  }
+}

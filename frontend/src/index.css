@@ -1,0 +1,105 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+@theme {
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
+
+  /* flat dark surfaces only */
+  --color-void: #000000;
+  --color-surface: #181818;
+  --color-raised: #1f1f1f;
+  --color-hover: #272727;
+  --color-line: #313131;
+
+  --color-ink: #ffffff;
+  --color-muted: #9b9b9b;
+  --color-faint: #6b6b6b;
+
+  --color-sealed: #7ce3a7;
+  --color-sealed-bg: #10291b;
+  --color-leak: #f5b65b;
+  --color-leak-bg: #2e2110;
+  --color-bad: #f47272;
+  --color-bad-bg: #2e1414;
+
+  --ease-weighted: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Named text styles (landing-page-design B1) */
+@utility heading-1 { font-size: 3.75rem; line-height: 1; font-weight: 600; letter-spacing: -0.025em; }
+@utility heading-2 { font-size: 3rem; line-height: 1; font-weight: 600; letter-spacing: -0.02em; }
+@utility heading-3 { font-size: 2.25rem; line-height: 2.5rem; font-weight: 600; letter-spacing: -0.015em; }
+@utility heading-4 { font-size: 1.875rem; line-height: 2.25rem; font-weight: 600; }
+@utility heading-5 { font-size: 1.5rem; line-height: 2rem; font-weight: 600; }
+@utility heading-6 { font-size: 1.25rem; line-height: 1.75rem; font-weight: 600; }
+@utility title-1 { font-size: 1.25rem; line-height: 1.75rem; font-weight: 500; }
+@utility title-2 { font-size: 1.125rem; line-height: 1.75rem; font-weight: 500; }
+@utility title-3 { font-size: 1rem; line-height: 1.5rem; font-weight: 500; }
+@utility title-4 { font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; }
+@utility title-5 { font-size: 0.75rem; line-height: 1rem; font-weight: 500; }
+@utility body-1 { font-size: 1rem; line-height: 1.5rem; font-weight: 600; }
+@utility body-2 { font-size: 1rem; line-height: 1.5rem; font-weight: 500; }
+@utility body-3 { font-size: 1rem; line-height: 1.5rem; font-weight: 400; }
+@utility body-4 { font-size: 0.875rem; line-height: 1.25rem; font-weight: 600; }
+@utility body-5 { font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; }
+@utility body-6 { font-size: 0.875rem; line-height: 1.25rem; font-weight: 400; }
+@utility button-lg { font-size: 1.125rem; line-height: 1.75rem; font-weight: 600; }
+@utility button-md { font-size: 1rem; line-height: 1.5rem; font-weight: 600; }
+@utility button-sm { font-size: 0.875rem; line-height: 1.25rem; font-weight: 600; }
+@utility button-xsm { font-size: 0.75rem; line-height: 1rem; font-weight: 600; }
+@utility caption-1 { font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; }
+@utility caption-2 { font-size: 0.875rem; line-height: 1.25rem; font-weight: 400; }
+@utility caption-3 { font-size: 0.75rem; line-height: 1rem; font-weight: 600; }
+@utility caption-4 { font-size: 0.75rem; line-height: 1rem; font-weight: 500; }
+@utility caption-5 { font-size: 0.75rem; line-height: 1rem; font-weight: 400; }
+
+@utility hero-gradient {
+  background-image: linear-gradient(90deg, #ffffff, #9b9b9b);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+html {
+  background: var(--color-void);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  color-scheme: dark;
+}
+
+h1, h2, h3, h4 { text-wrap: balance; }
+p, li { text-wrap: pretty; }
+
+::selection { background: #313131; }
+
+:focus-visible {
+  outline: 2px solid var(--color-sealed);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(32px);
+  transition: opacity 700ms var(--ease-weighted), transform 700ms var(--ease-weighted);
+}
+.reveal.in { opacity: 1; transform: none; }
+
+.word { color: rgb(255 255 255 / 0.3); transition: color 500ms var(--ease-weighted); }
+.word.on { color: #ffffff; }
+
+.skeleton {
+  background: #272727;
+  border-radius: 8px;
+  animation: pulse 1.6s var(--ease-weighted) infinite;
+}
+@keyframes pulse { 50% { opacity: 0.45; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .word { transition: none; color: #ffffff; }
+  .skeleton { animation: none; }
+}

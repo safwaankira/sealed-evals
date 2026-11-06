@@ -1,0 +1,66 @@
+{
+  "name": "Practice set (public)",
+  "system": "Reply with only the final answer. No explanation.",
+  "items": [
+    {
+      "prompt": "A train leaves at 9:40 and arrives at 13:05 the same day. How many minutes does the trip take?",
+      "answer": "205",
+      "grader": "number"
+    },
+    {
+      "prompt": "What is 17% of 240?",
+      "answer": "40.8",
+      "grader": "number"
+    },
+    {
+      "prompt": "Which planet has the shortest year? A) Venus B) Mercury C) Mars D) Earth. Answer with the letter.",
+      "answer": "B",
+      "grader": "choice"
+    },
+    {
+      "prompt": "What is the capital city of Australia?",
+      "answer": "Canberra",
+      "grader": "exact"
+    },
+    {
+      "prompt": "A shop sells pens at 3 for 2 dollars. How many dollars do 27 pens cost?",
+      "answer": "18",
+      "grader": "number"
+    },
+    {
+      "prompt": "Which chemical element has the symbol Fe?",
+      "answer": "Iron",
+      "grader": "exact"
+    },
+    {
+      "prompt": "A rectangle measures 12 cm by 7.5 cm. What is its area in square centimeters?",
+      "answer": "90",
+      "grader": "number"
+    },
+    {
+      "prompt": "Which of these numbers is prime? A) 51 B) 57 C) 59 D) 63. Answer with the letter.",
+      "answer": "C",
+      "grader": "choice"
+    },
+    {
+      "prompt": "Write the word necessary backwards, in lowercase.",
+      "answer": "yrassecen",
+      "grader": "exact"
+    },
+    {
+      "prompt": "How many seconds are there in 2.5 hours?",
+      "answer": "9000",
+      "grader": "number"
+    },
+    {
+      "prompt": "What is the next number in the sequence 2, 6, 12, 20, 30?",
+      "answer": "42",
+      "grader": "number"
+    },
+    {
+      "prompt": "Who wrote the novel Pride and Prejudice? Give the surname only.",
+      "answer": "Austen",
+      "grader": "exact"
+    }
+  ]
+}

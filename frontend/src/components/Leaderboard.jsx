@@ -1,0 +1,90 @@
+import { ArrowRight, Trophy } from "@phosphor-icons/react";
+import { Card, ModeBadge, Skeleton, LinkButton } from "./ui";
+import { pct, ago, yoctoToNear, short } from "../lib/format";
+
+export default function Leaderboard({ rows, loading, compact = false }) {
+  if (loading) {
+    return (
+      <div className="grid gap-4 md:grid-cols-2">
+        {[0, 1].map((i) => (
+          <Card key={i} className="flex flex-col gap-4 p-6">
+            <Skeleton className="h-6 w-48" />
+            {[0, 1, 2].map((j) => (
+              <Skeleton key={j} className="h-10 w-full" />
+            ))}
+          </Card>
+        ))}
+      </div>
+    );
+  }
+  const sealed = compact ? (rows ?? []).filter((r) => r.benchmark.sealed && r.benchmark.active) : rows ?? [];
+  if (!sealed.length) {
+    return (
+      <Card className="flex flex-col items-start gap-4 p-8">
+        <Trophy size={28} className="text-muted" aria-hidden />
+        <div className="flex flex-col gap-1">
+          <h3 className="heading-6">No sealed benchmarks yet</h3>
+          <p className="body-6 text-muted">Seal the first one. It takes one transaction and the file never leaves your browser unencrypted.</p>
+        </div>
+        <LinkButton href="#/seal" variant="secondary">
+          Seal a benchmark
+        </LinkButton>
+      </Card>
+    );
+  }
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {sealed.map(({ benchmark: b, results }) => (
+        <Card key={b.id} className="flex flex-col gap-4 p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col gap-1">
+              <a href={`#/benchmark/${b.id}`} className="heading-6 hover:underline">
+                {b.name}
+              </a>
+              <span className="caption-5 text-muted">
+                {b.item_count} hidden items · {yoctoToNear(b.price)} NEAR per run · by {short(b.author, 14, 8)}
+              </span>
+            </div>
+            <a
+              href={`#/run?benchmark=${b.id}`}
+              className="shrink-0 rounded-lg border border-line px-3 py-2 button-sm transition duration-300 ease-weighted hover:bg-hover active:scale-[0.98]"
+            >
+              Run
+            </a>
+          </div>
+          {results.length ? (
+            <ol className="flex flex-col">
+              {(compact ? results.slice(0, 5) : results).map((e, i) => (
+                <li key={e.id}>
+                  <a
+                    href={`#/eval/${e.id}`}
+                    className="grid grid-cols-[24px_1fr_auto] items-center gap-3 rounded-lg px-2 py-2 transition duration-300 ease-weighted hover:bg-raised"
+                  >
+                    <span className="caption-3 text-muted">{i + 1}</span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate body-5">{e.model}</span>
+                      <span className="caption-5 text-muted">
+                        {e.result.verified_responses}/{e.result.total} signed · {ago(e.result.completed_ms)}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <ModeBadge mode={e.result.mode} size="sm" />
+                      <span className="w-16 text-right font-mono body-4">{pct(e.result.score_bps)}</span>
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="rounded-lg bg-raised px-3 py-3 body-6 text-muted">No scores yet. Run the first eval.</p>
+          )}
+          {compact && results.length > 5 ? (
+            <a href={`#/benchmark/${b.id}`} className="inline-flex items-center gap-1 caption-1 text-muted hover:text-ink">
+              All {results.length} results <ArrowRight size={12} aria-hidden />
+            </a>
+          ) : null}
+        </Card>
+      ))}
+    </div>
+  );
+}

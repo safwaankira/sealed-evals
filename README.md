@@ -1,0 +1,83 @@
+# Sealed Evals
+
+**Hidden AI benchmarks, scored inside a TEE, paid per run on NEAR.**
+
+Benchmarks stop meaning anything once their questions leak into training data. Sealed Evals keeps the
+questions inside attested hardware for their whole life:
+
+1. **Seal.** An author encrypts a benchmark in the browser to a key that only exists inside a
+   [Shade Agent](https://docs.near.org/ai/shade-agents/getting-started/introduction) TEE on Phala Cloud.
+   The NEAR contract stores only its sha256 and a price per run.
+2. **Run.** Anyone escrows the price to score a model. Before a single question leaves, the agent asks
+   NEAR AI Cloud for an attestation with a fresh nonce, checks the GPU evidence with NVIDIA, and later
+   requires every answer to be signed by a key from that report.
+3. **Prove.** Grading happens inside the TEE. The agent publishes an evidence file (hashes and
+   signatures, never questions or answers), settles the score and the evidence hash on chain, and the
+   contract pays the author. Any result page re-checks all of it in the browser.
+
+Runs are labeled honestly:
+
+| Label | When | Questions seen by |
+|---|---|---|
+| **Sealed** | Model served from a NEAR AI Cloud TEE, attestation and NVIDIA check passed | attested enclaves only |
+| **Leak risk** | Closed API model, or attestation failed | the provider. Only runs if the author opted in; otherwise refused and refunded before anything is sent |
+
+Tracks: **Privacy & Private AI** (TEE, NEAR AI Cloud) and **Agent Economy** (agents paying for data).
+
+## Chain of trust
+
+```
+author browser ──encrypt (X25519+HKDF+AES-GCM, AAD = contract:benchmark)──▶ Shade Agent TEE (Phala, Intel TDX)
+                                                                              │  seal key from dstack KMS,
+NEAR contract ◀── register_agent(TDX attestation, verified on chain) ─────────┤  TDX quote commits to it
+     ▲                                                                        │
+     │ submit_result(score, evidence_hash)                                    ▼
+     └──────────────── grade inside TEE ◀── answers + signatures ── NEAR AI Cloud TEE (attested, NVIDIA NRAS)
+```
+
+* Only agents whose TDX measurements the owner approved can `seal_benchmark`, `submit_result` or `fail_eval`.
+* `GET /api/seal-key?nonce=<32 bytes hex>` returns a fresh quote with `report_data = sha256(sha256("sealed-evals:seal-key:v1:<pk>") ":" nonce)`.
+* Requesters can `reclaim_eval` their escrow if the agent doesn't answer within an hour.
+
+### Known limits
+
+* Trust in Intel TDX, NVIDIA confidential computing and Phala's KMS.
+* The contract owner approves code measurements; approving malicious code could expose sealed sets.
+* The agent verifies NVIDIA GPU attestation and every answer signature, but does not yet independently
+  verify the TDX quotes of NEAR AI's gateway and model nodes (their report hash is stored on chain).
+* Graders: exact, contains, number, multiple choice.
+* Testnet only.
+
+## Layout
+
+| Path | What |
+|---|---|
+| `agent-contract/src/sealed.rs` | Benchmarks registry, escrow, agent-only settlement, refunds (unit tests in `internal/sealed_tests.rs`) |
+| `src/tee/` | Seal key + quote (dstack), encrypted at-rest storage |
+| `src/nearai/client.ts` | NEAR AI Cloud attestation, NVIDIA NRAS check, chat + signature verification |
+| `src/eval/` | Work queue and eval runner |
+| `src/shared/` | Envelope crypto and graders, shared by the agent and the web app |
+| `frontend/` | Web app, built into the same attested image |
+| `test/` | Crypto/grader tests and an end-to-end run against mock NEAR AI + NVIDIA services |
+
+## Run it
+
+```bash
+npm i && npm test                       # agent tests
+cd agent-contract && cargo test --lib   # contract tests
+```
+
+Deploy follows the Shade Agent flow: fill `.env` (see `.env.example`, including `NEARAI_CLOUD_API_KEY`) and
+`deployment.yaml`, then `shade deploy` with `environment: TEE`.
+
+## Built on
+
+Open source code reused under its license, as the hackathon rules allow:
+
+* [NearDeFi/shade-agent-template](https://github.com/NearDeFi/shade-agent-template) (Apache-2.0): contract, attestation verification, agent bootstrap, Docker and deploy config.
+* [near-examples/nearai-cloud-verification-example](https://github.com/near-examples/nearai-cloud-verification-example) (MIT): attestation, NVIDIA and signature verification logic, ported to TypeScript in `src/nearai/client.ts`.
+* Prior art credited: Ritual's Evault proposal and ManaTEE described TEE-verified evals; Sealed Evals is a working NEAR-native implementation with per-run payments and leak labels.
+
+Code written with AI assistance (Claude), as permitted by the rules.
+
+License: Apache-2.0.

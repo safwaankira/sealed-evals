@@ -1,0 +1,20 @@
+services:
+  sealed-evals:
+    environment:
+      AGENT_CONTRACT_ID: ${AGENT_CONTRACT_ID}
+      SPONSOR_ACCOUNT_ID: ${SPONSOR_ACCOUNT_ID}
+      SPONSOR_PRIVATE_KEY: ${SPONSOR_PRIVATE_KEY}
+      NEARAI_CLOUD_API_KEY: ${NEARAI_CLOUD_API_KEY}
+    platform: linux/amd64
+    # replaced with the built image digest by `shade deploy`
+    image: sealed-evals:local
+    container_name: sealed-evals
+    ports:
+      - 3000:3000
+    volumes:
+      - /var/run/dstack.sock:/var/run/dstack.sock
+      - sealed-data:/data
+    restart: always
+
+volumes:
+  sealed-data:
