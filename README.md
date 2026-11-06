@@ -22,7 +22,7 @@ Runs are labeled honestly:
 | **Sealed** | Model served from a NEAR AI Cloud TEE, attestation and NVIDIA check passed | attested enclaves only |
 | **Leak risk** | Closed API model, or attestation failed | the provider. Only runs if the author opted in; otherwise refused and refunded before anything is sent |
 
-Tracks: **Privacy & Private AI** (TEE, NEAR AI Cloud) and **Agent Economy** (agents paying for data).
+Tracks: **Privacy & Private AI** (primary: TEE, NEAR AI Cloud) and **Agent Economy** (pay per run for data).
 
 ## Chain of trust
 
@@ -42,6 +42,9 @@ NEAR contract ◀── register_agent(TDX attestation, verified on chain) ─�
 * `GET /api/seal-key?nonce=<32 bytes hex>` returns a fresh quote with `report_data = sha256(sha256("sealed-evals:seal-key:v1:<pk>") ":" nonce)`.
 * Requesters can `reclaim_eval` their escrow if the agent doesn't answer within an hour (longer once the agent has claimed the run, scaled by item count).
 * Operator limits (env): `MAX_RUN_ITEMS` (default 500) and `MIN_PRICE_PER_ITEM_YOCTO` (default 0.001 NEAR), because the operator's NEAR AI key pays for inference.
+
+Full claim by claim breakdown with the code and tests behind each: **[TRUST.md](TRUST.md)**.
+Every result page re-checks the run in the browser, and a "Flip one character" button shows the checks catching a tampered evidence file.
 
 ### Known limits
 
@@ -89,6 +92,15 @@ Open source code reused under its license, as the hackathon rules allow:
 * [NearDeFi/shade-agent-template](https://github.com/NearDeFi/shade-agent-template) (Apache-2.0): contract, attestation verification, agent bootstrap, Docker and deploy config.
 * [near-examples/nearai-cloud-verification-example](https://github.com/near-examples/nearai-cloud-verification-example) (MIT): attestation, NVIDIA and signature verification logic, ported to TypeScript in `src/nearai/client.ts`.
 * Prior art credited: Ritual's Evault proposal and ManaTEE described TEE-verified evals; Sealed Evals is a working NEAR-native implementation with per-run payments and leak labels.
+
+## Related work in this hackathon
+
+Other entries seal different things, and Sealed Evals borrows ideas from their presentation:
+[TEE Receipts](https://github.com/tmdry4530/tee-receipts) records NEAR AI Cloud signatures on chain,
+[Judge on NEAR](https://github.com/vijaygopalbalasa/judge-near) grades sealed agent work in a TEE,
+[PatchBond](https://github.com/PatchBond/patchbond) judges pull requests in a TEE with a verify checklist, and
+[Proof of Done](https://github.com/team-attention/proof-of-done) uses hidden tests without a TEE.
+Sealed Evals is the one that seals the benchmark questions themselves and pays their author per run.
 
 Code written with AI assistance (Claude), as permitted by the rules.
 

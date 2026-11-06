@@ -147,15 +147,18 @@ function Check({ ok, label, detail }) {
 function Verify({ e, b }) {
   const r = e.result;
   const [s, setS] = useState({ loading: true });
+  // Demo control: corrupt one character of the evidence locally to watch the checks catch it
+  const [tampered, setTampered] = useState(false);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const [{ text: evText }, { text: atText }] = await Promise.all([
+        const [{ text: fetchedEv }, { text: atText }] = await Promise.all([
           apiGetRaw(`/evals/${e.id}/evidence`),
           apiGetRaw(`/evals/${e.id}/attestation`),
         ]);
+        const evText = tampered ? flipOneChar(fetchedEv) : fetchedEv;
         const evHash = await sha256HexOf(evText);
         const atHash = await sha256HexOf(atText);
         const evidence = JSON.parse(evText);
@@ -204,7 +207,7 @@ function Verify({ e, b }) {
     return () => {
       alive = false;
     };
-  }, [e.id, r.evidence_hash, r.model_attestation_hash, b.set_hash, e.model, r.correct, r.total, r.mode]);
+  }, [e.id, r.evidence_hash, r.model_attestation_hash, b.set_hash, e.model, r.correct, r.total, r.mode, tampered]);
 
   const ev = s.evidence;
   const nv = ev?.model_attestation?.nvidia;
@@ -262,6 +265,9 @@ function Verify({ e, b }) {
           <Button variant="secondary" size="sm" onClick={() => download(s.atText, `sealed-eval-${e.id}-attestation.json`)}>
             <DownloadSimple size={14} aria-hidden /> Attestation report
           </Button>
+          <Button variant={tampered ? "primary" : "ghost"} size="sm" onClick={() => setTampered((t) => !t)}>
+            {tampered ? "Restore the real evidence" : "Flip one character to test the checks"}
+          </Button>
           <AgentLink account={r.agent} />
         </div>
       ) : null}
@@ -282,4 +288,13 @@ function AgentLink({ account }) {
       Agent <Mono>{short(account, 8, 6)}</Mono> <ArrowSquareOut size={14} aria-hidden />
     </a>
   );
+}
+
+/** Changes one hex character of the first answer hash, as an attacker editing the evidence would. */
+function flipOneChar(text) {
+  const m = text.match(/"response_sha256": "([0-9a-f])/);
+  if (!m) return text + " ";
+  const at = m.index + m[0].length - 1;
+  const flipped = m[1] === "0" ? "1" : "0";
+  return text.slice(0, at) + flipped + text.slice(at + 1);
 }
