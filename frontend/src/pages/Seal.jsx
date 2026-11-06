@@ -12,11 +12,24 @@ const STORAGE_DEPOSIT = "20000000000000000000000"; // 0.02 NEAR, unused part ref
 
 export default function Seal({ existingId }) {
   const { accountId } = useWallet();
+  // The key we encrypt to comes from the chain: only an attested agent can publish it there,
+  // so a tampered page or API can't swap in its own key. The API copy must agree with it.
   const sealKey = useAsync(async () => {
-    const k = await apiGet("/seal-key");
-    // the commitment in the quote must be to exactly this key
-    k.bindingOk = k.report_data === sealKeyReportData(k.public_key);
-    return k;
+    const [k, info, agents] = await Promise.all([
+      apiGet("/seal-key"),
+      view("get_contract_info", {}),
+      view("get_agents", { from_index: 0, limit: 20 }),
+    ]);
+    const valid = (agents ?? []).filter((a) => a.validity === "Valid");
+    const chainKeys = await Promise.all(valid.map((a) => view("get_seal_key", { account_id: a.account_id })));
+    const match = valid.find((a, i) => chainKeys[i] && chainKeys[i] === k.public_key);
+    return {
+      ...k,
+      requiresTee: !!info?.requires_tee,
+      onChain: !!match,
+      agentId: match?.account_id ?? null,
+      bindingOk: !!match && k.report_data === sealKeyReportData(k.public_key),
+    };
   }, []);
   const existing = useAsync(async () => (existingId ? view("get_benchmark", { benchmark_id: existingId }) : null), [existingId]);
 
@@ -59,6 +72,7 @@ export default function Seal({ existingId }) {
     try {
       if (!file) throw new Error("Choose a benchmark file first.");
       if (!sealKey.data) throw new Error("The agent's seal key is not available yet.");
+      if (!sealKey.data.onChain) throw new Error("This key is not published on chain by a valid attested agent, so sealing is blocked.");
       if (!sealKey.data.bindingOk) throw new Error("The agent's quote does not commit to its seal key, so sealing is blocked.");
       const { contractId } = await getConfig();
 
@@ -82,8 +96,9 @@ export default function Seal({ existingId }) {
       );
       let id = value;
       if (id == null) {
+        const me = (await import("../lib/near")).walletStore.get().accountId;
         const mine = ((await view("get_benchmarks", { from_index: 0, limit: 100 })) ?? []).filter(
-          (b) => b.set_hash === file.hash && !b.sealed,
+          (b) => b.set_hash === file.hash && !b.sealed && b.author === me,
         );
         id = mine[mine.length - 1]?.id;
         if (!id) throw new Error("Registered, but the new id could not be read. Open it from the leaderboard to finish sealing.");
@@ -134,7 +149,7 @@ export default function Seal({ existingId }) {
             label="Benchmark file"
             hint={
               <>
-                JSON with an items array of prompt and answer pairs, up to 10,000 items.{" "}
+                JSON with an items array of prompt and answer pairs, up to 2,000 items (this agent runs up to 500 per eval).{" "}
                 <a href="/sample-benchmark.json" download className="inline-flex items-center gap-1 text-ink underline">
                   <DownloadSimple size={12} aria-hidden /> Practice file
                 </a>{" "}
@@ -206,16 +221,20 @@ function SealKeyCard({ sealKey }) {
   if (sealKey.loading && !sealKey.data) return <Skeleton className="h-24 w-full" />;
   if (sealKey.error) return <ErrorNote error={sealKey.error} />;
   const k = sealKey.data;
-  const local = k.tee_mode !== "tee";
+  const local = k.tee_mode !== "tee" || !k.requiresTee;
   return (
     <Card className={`flex flex-col gap-2 p-4 ${local ? "border-leak/40" : ""}`}>
       <span className={`inline-flex items-center gap-2 title-4 ${local ? "text-leak" : "text-sealed"}`}>
         {local ? <Warning size={16} aria-hidden /> : <LockKey size={16} aria-hidden />}
-        {local ? "Local test agent, not in a TEE. Do not seal real benchmarks here." : "Encrypting to a key held inside the TEE"}
+        {local
+          ? "Local test agent, not in a TEE. Do not seal real benchmarks here."
+          : k.onChain
+            ? "Encrypting to the key the attested agent published on chain"
+            : "This key is not published on chain by a valid agent. Sealing is blocked."}
       </span>
       <span className="caption-5 text-muted">
         Key <Mono className="text-ink">{short(k.public_key, 12, 12)}</Mono>
-        {k.bindingOk ? " · quote commits to this key" : " · warning: quote does not commit to this key"}
+        {k.onChain ? ` · published on chain by ${short(k.agentId, 8, 6)}` : " · not on chain"}
         {" · "}
         <a href="#/trust" className="underline hover:text-ink">verify it yourself</a>
       </span>

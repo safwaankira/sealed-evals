@@ -12,6 +12,10 @@ import api from "./routes/api";
 
 const agent = await initAgent();
 const keys = await initKeys();
+if (process.env.NODE_ENV === "production" && keys.mode !== "tee") {
+  // A production image without the dstack socket must never pretend to be sealed
+  throw new Error("Production build started outside a TEE (no /var/run/dstack.sock). Refusing to run.");
+}
 await initStore();
 console.log(`Agent ${agent.accountId()} | contract ${config.agentContractId} | TEE mode: ${keys.mode}`);
 console.log(`Seal public key: ${keys.sealPublicKeyHex}`);
@@ -35,14 +39,28 @@ while (true) {
   await new Promise((r) => setTimeout(r, 10_000));
 }
 
-// Re-register before the attestation expires (contract default: 7 days)
-setInterval(async () => {
+// Publish the seal key on chain: only attested code can, so the web app trusts this copy
+async function publishSealKey() {
+  const onChain = await agent.view<any>({ methodName: "get_seal_key", args: { account_id: agent.accountId() } });
+  if (onChain !== keys.sealPublicKeyHex) {
+    await agent.call({ methodName: "set_seal_key", args: { public_key: keys.sealPublicKeyHex } });
+    console.log("Seal key published on chain");
+  }
+}
+await publishSealKey().catch((e) => console.error("Publishing seal key failed:", (e as Error).message));
+
+// Re-register daily (attestations last 7 days), retrying every 5 minutes after a failure
+async function keepRegistered() {
   try {
     if (await agent.register()) console.log("Agent re-registered");
+    await publishSealKey();
+    setTimeout(keepRegistered, 24 * 60 * 60 * 1000);
   } catch (error) {
     console.error("Re-registration error:", (error as Error).message);
+    setTimeout(keepRegistered, 5 * 60 * 1000);
   }
-}, 6 * 24 * 60 * 60 * 1000);
+}
+setTimeout(keepRegistered, 24 * 60 * 60 * 1000);
 
 const app = new Hono();
 app.use("/api/*", cors());

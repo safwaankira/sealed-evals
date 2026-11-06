@@ -24,6 +24,9 @@ export const config = {
   pollMs: Number(process.env.POLL_MS || "8000"),
   maxTokens: Number(process.env.MAX_TOKENS || "1024"),
   itemConcurrency: Number(process.env.ITEM_CONCURRENCY || "4"),
+  /** Operator cost limits: the operator's NEAR AI key pays for inference */
+  maxRunItems: Number(process.env.MAX_RUN_ITEMS || "500"),
+  minPricePerItemYocto: BigInt(process.env.MIN_PRICE_PER_ITEM_YOCTO || "1000000000000000000000"), // 0.001 NEAR
   /** Leaving this unset in local mode is fine; it only seeds the non-TEE fallback keys. */
   localSealSecret: process.env.LOCAL_SEAL_SECRET || "",
   publicDir: process.env.PUBLIC_DIR || "./public",

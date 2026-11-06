@@ -10,9 +10,9 @@ import { loadEvidence, loadSealedBenchmark, saveEvidence } from "../tee/store";
 import { keys } from "../tee/keys";
 import type { BenchmarkView, EvalView } from "../near/types";
 
+// Per-item correctness is deliberately NOT published: index + correct would leak one bit per hidden answer.
 export interface ItemRecord {
   index: number;
-  correct: boolean;
   error: string | null;
   request_sha256: string | null;
   response_sha256: string | null;
@@ -22,11 +22,16 @@ export interface ItemRecord {
   signature_verified: boolean;
 }
 
-async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, i: number) => Promise<R>): Promise<R[]> {
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, i: number) => Promise<R>,
+  shouldStop: () => boolean = () => false,
+): Promise<R[]> {
   const out: R[] = new Array(items.length);
   let next = 0;
   const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
-    while (next < items.length) {
+    while (next < items.length && !shouldStop()) {
       const i = next++;
       out[i] = await fn(items[i], i);
     }
@@ -73,6 +78,10 @@ export async function runEval(ev: EvalView, benchmark: BenchmarkView): Promise<v
   const evalId = ev.id;
   const started = new Date().toISOString();
 
+  // Never start (or resubmit) something the chain no longer considers pending
+  const current = (await agent().view<any>({ methodName: "get_eval", args: { eval_id: evalId } })) as EvalView | null;
+  if (!current || current.status !== "Pending") return;
+
   // A previous attempt finished the run but settlement failed: resubmit, don't re-ask the model.
   const previous = await loadEvidence(evalId, "evidence");
   if (previous) {
@@ -89,9 +98,22 @@ export async function runEval(ev: EvalView, benchmark: BenchmarkView): Promise<v
   if (sha256Hex(plaintext) !== benchmark.set_hash) {
     return failEval(evalId, "Stored benchmark does not match the on-chain hash. Refunded.");
   }
-  const file = parseBenchmark(new TextDecoder().decode(plaintext));
+  let file;
+  try {
+    file = parseBenchmark(new TextDecoder().decode(plaintext));
+  } catch {
+    return failEval(evalId, "Stored benchmark could not be read. Refunded.");
+  }
   if (file.items.length !== benchmark.item_count) {
     return failEval(evalId, "Stored benchmark item count does not match the chain. Refunded.");
+  }
+
+  // Operator policy: the operator's NEAR AI key pays for inference, so refuse runs it can't afford
+  if (file.items.length > config.maxRunItems) {
+    return failEval(evalId, `This agent runs at most ${config.maxRunItems} items per eval. No questions were sent. Refunded.`);
+  }
+  if (BigInt(ev.paid) < config.minPricePerItemYocto * BigInt(file.items.length)) {
+    return failEval(evalId, "The benchmark price is below this agent's minimum per item. No questions were sent. Refunded.");
   }
 
   // 2. Decide Sealed vs Leak risk BEFORE any question leaves the TEE
@@ -101,7 +123,8 @@ export async function runEval(ev: EvalView, benchmark: BenchmarkView): Promise<v
   } catch (e) {
     return failEval(evalId, `Could not reach NEAR AI Cloud for "${ev.model}". No questions were sent. Refunded.`);
   }
-  if (!attestation.sealed && !benchmark.allow_leak_risk) {
+  // the author's policy as it was when the run was paid for
+  if (!attestation.sealed && !ev.allow_leak_risk) {
     return failEval(
       evalId,
       `${attestation.reason ?? "Model is not attested"}, and the author does not allow leak-risk runs. No questions were sent. Refunded.`,
@@ -110,12 +133,18 @@ export async function runEval(ev: EvalView, benchmark: BenchmarkView): Promise<v
   const mode = attestation.sealed ? "Sealed" : "LeakRisk";
   console.log(`eval ${evalId}: ${benchmark.item_count} items on ${ev.model} as ${mode}`);
 
-  // 3. Run and grade every item inside the TEE
+  // Mark the run as started on chain so the requester can't reclaim it halfway through
+  await agent().call({ methodName: "claim_eval", args: { eval_id: evalId } });
+
+  // 3. Run and grade every item inside the TEE. In sealed mode, the first answer that isn't signed
+  // by an attested model key stops the run so no further questions go out.
   const system = file.system ?? DEFAULT_SYSTEM;
+  let broken = false;
+  const correctFlags: boolean[] = new Array(file.items.length).fill(false);
   const records = await mapLimit(file.items, config.itemConcurrency, async (item, index): Promise<ItemRecord> => {
     try {
       const result = await withRetry(() => chat(ev.model, system, item.prompt));
-      const sig = attestation.sealed
+      const sigRaw = attestation.sealed
         ? await checkSignature(result, ev.model, attestation).catch((e) => ({
             verified: false,
             kind: null,
@@ -124,21 +153,24 @@ export async function runEval(ev: EvalView, benchmark: BenchmarkView): Promise<v
             error: String(e),
           }))
         : null;
+      // only a signature from the model's own TEE proves where the question went
+      const verified = !!sigRaw?.verified && sigRaw.kind === "provider_tee";
+      if (attestation.sealed && !verified) broken = true;
+      correctFlags[index] = grade(item, result.content);
       return {
         index,
-        correct: grade(item, result.content),
         error: null,
         request_sha256: result.requestHash,
         response_sha256: result.responseHash,
-        signature_kind: sig?.kind ?? null,
-        signing_address: sig?.signingAddress ?? null,
-        signature: sig?.signature ?? null,
-        signature_verified: sig?.verified ?? false,
+        signature_kind: sigRaw?.kind ?? null,
+        signing_address: sigRaw?.signingAddress ?? null,
+        signature: sigRaw?.signature ?? null,
+        signature_verified: verified,
       };
     } catch (e) {
+      if (attestation.sealed) broken = true;
       return {
         index,
-        correct: false,
         // never echo upstream error bodies: they could quote the prompt
         error: "request failed",
         request_sha256: null,
@@ -149,14 +181,17 @@ export async function runEval(ev: EvalView, benchmark: BenchmarkView): Promise<v
         signature_verified: false,
       };
     }
-  });
+  }, () => broken);
 
-  const total = records.length;
+  const total = file.items.length;
+  if (attestation.sealed && (broken || records.some((r) => !r || !r.signature_verified))) {
+    return failEval(evalId, "An answer could not be tied to the attested model, so the run was stopped and not scored. Refunded.");
+  }
   const errored = records.filter((r) => r.error).length;
   if (errored > total * 0.2) {
     return failEval(evalId, `The model failed on ${errored} of ${total} items, so no score was recorded. Refunded.`);
   }
-  const correct = records.filter((r) => r.correct).length;
+  const correct = correctFlags.filter(Boolean).length;
   const verified = records.filter((r) => r.signature_verified).length;
 
   // 4. Evidence: everything needed to check the run, nothing that reveals the benchmark
@@ -181,6 +216,8 @@ export async function runEval(ev: EvalView, benchmark: BenchmarkView): Promise<v
       model_signing_addresses: attestation.modelSigningAddresses,
       gateway_signing_addresses: attestation.gatewaySigningAddresses,
       nvidia: attestation.nvidia,
+      // raw NVIDIA (NRAS) response, so anyone can verify its JWTs against NVIDIA's keys themselves
+      nras_response: attestation.nrasRaw,
     },
     score: { correct, total, verified_responses: verified, errored },
     items: records,

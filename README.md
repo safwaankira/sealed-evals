@@ -35,14 +35,22 @@ NEAR contract ◀── register_agent(TDX attestation, verified on chain) ─�
      └──────────────── grade inside TEE ◀── answers + signatures ── NEAR AI Cloud TEE (attested, NVIDIA NRAS)
 ```
 
-* Only agents whose TDX measurements the owner approved can `seal_benchmark`, `submit_result` or `fail_eval`.
+* Only agents whose TDX measurements the owner approved can `seal_benchmark`, `claim_eval`, `submit_result`, `fail_eval` or `set_seal_key`.
+* The agent publishes its seal key on chain with `set_seal_key`; the web app encrypts to that copy, not to whatever the API returns.
+* A run is **Sealed** only if every answer carries a verified signature from the attested model TEE (enforced by the contract). The first unverifiable answer stops the run and refunds it.
+* The author's leak-risk policy is snapshotted when a run is paid for. Evidence is only served once a run settles, and holds no per-item correctness.
 * `GET /api/seal-key?nonce=<32 bytes hex>` returns a fresh quote with `report_data = sha256(sha256("sealed-evals:seal-key:v1:<pk>") ":" nonce)`.
-* Requesters can `reclaim_eval` their escrow if the agent doesn't answer within an hour.
+* Requesters can `reclaim_eval` their escrow if the agent doesn't answer within an hour (longer once the agent has claimed the run, scaled by item count).
+* Operator limits (env): `MAX_RUN_ITEMS` (default 500) and `MIN_PRICE_PER_ITEM_YOCTO` (default 0.001 NEAR), because the operator's NEAR AI key pays for inference.
 
 ### Known limits
 
 * Trust in Intel TDX, NVIDIA confidential computing and Phala's KMS.
 * The contract owner approves code measurements; approving malicious code could expose sealed sets.
+* The seal key comes from Phala's KMS for this app id, so the app id and its compose hash are part of the trust base.
+* NRAS JWTs are stored raw in the evidence but checked against NVIDIA's keys only by whoever downloads them.
+* Request hashes in the evidence act as a membership check for anyone who can guess a question exactly.
+* Payouts to deleted accounts stay in the contract.
 * The agent verifies NVIDIA GPU attestation and every answer signature, but does not yet independently
   verify the TDX quotes of NEAR AI's gateway and model nodes (their report hash is stored on chain).
 * Graders: exact, contains, number, multiple choice.
@@ -69,6 +77,10 @@ cd agent-contract && cargo test --lib   # contract tests
 
 Deploy follows the Shade Agent flow: fill `.env` (see `.env.example`, including `NEARAI_CLOUD_API_KEY`) and
 `deployment.yaml`, then `shade deploy` with `environment: TEE`.
+
+## Review
+
+Before deploy, an independent model reviewed the contract, agent and web app. All High findings and the important Medium/Low ones are fixed; the remaining ones are listed above as known limits.
 
 ## Built on
 

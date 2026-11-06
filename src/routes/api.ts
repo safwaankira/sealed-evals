@@ -12,6 +12,21 @@ import type { BenchmarkView } from "../near/types";
 
 const api = new Hono();
 
+// Small fixed-window rate limit for the endpoints that cost the TEE real work
+const hits = new Map<string, { n: number; reset: number }>();
+function limited(key: string, max: number, windowMs = 60_000): boolean {
+  const now = Date.now();
+  const h = hits.get(key);
+  if (!h || now > h.reset) {
+    hits.set(key, { n: 1, reset: now + windowMs });
+    if (hits.size > 10_000) hits.clear();
+    return false;
+  }
+  h.n++;
+  return h.n > max;
+}
+const clientKey = (c: any) => c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "anon";
+
 api.get("/health", (c) => c.json({ ok: true }));
 
 api.get("/agent-info", async (c) => {
@@ -37,6 +52,7 @@ api.get("/seal-key", async (c) => {
   if (nonce !== undefined && !/^[0-9a-fA-F]{64}$/.test(nonce)) {
     return c.json({ error: "nonce must be 32 bytes of hex" }, 400);
   }
+  if (nonce && limited(`quote:${clientKey(c)}`, 10)) return c.json({ error: "Too many quote requests, try again in a minute" }, 429);
   const fresh = nonce ? await freshSealKeyQuote(nonce) : null;
   return c.json({
     tee_mode: k.mode,
@@ -67,6 +83,7 @@ api.post(
   async (c) => {
     const id = c.req.param("id");
     if (!/^\d{1,20}$/.test(id)) return c.json({ error: "bad id" }, 400);
+    if (limited(`upload:${clientKey(c)}`, 5)) return c.json({ error: "Too many uploads, try again in a minute" }, 429);
 
     const benchmark = (await agent().view<any>({ methodName: "get_benchmark", args: { benchmark_id: id } })) as BenchmarkView | null;
     if (!benchmark) return c.json({ error: "Benchmark is not registered on chain" }, 404);
@@ -114,9 +131,16 @@ api.post(
   },
 );
 
+async function isSettled(id: string): Promise<boolean> {
+  const ev = (await agent().view<any>({ methodName: "get_eval", args: { eval_id: id } })) as { status?: string } | null;
+  return ev?.status === "Completed";
+}
+
 api.get("/evals/:id/evidence", async (c) => {
   const id = c.req.param("id");
   if (!/^\d{1,20}$/.test(id)) return c.json({ error: "bad id" }, 400);
+  // only publish once the run has settled, so nobody reads a score the author wasn't paid for
+  if (!(await isSettled(id))) return c.json({ error: "No evidence for this eval" }, 404);
   const body = await loadEvidence(id, "evidence");
   if (!body) return c.json({ error: "No evidence for this eval" }, 404);
   return c.body(body, 200, { "content-type": "application/json" });
@@ -125,6 +149,8 @@ api.get("/evals/:id/evidence", async (c) => {
 api.get("/evals/:id/attestation", async (c) => {
   const id = c.req.param("id");
   if (!/^\d{1,20}$/.test(id)) return c.json({ error: "bad id" }, 400);
+  // only publish once the run has settled, so nobody reads a score the author wasn't paid for
+  if (!(await isSettled(id))) return c.json({ error: "No attestation for this eval" }, 404);
   const body = await loadEvidence(id, "attestation");
   if (!body) return c.json({ error: "No attestation for this eval" }, 404);
   return c.body(body, 200, { "content-type": "application/json" });

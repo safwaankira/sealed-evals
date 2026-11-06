@@ -72,8 +72,9 @@ export default function Trust() {
       <Step icon={Key} n="2" title="Your file can only be opened inside that code">
         <p className="body-6 text-muted">
           The seal key is derived inside the TEE by Phala's key management, so it never exists outside it. The agent
-          proves the key is its own with a TDX quote whose report data commits to the key. Ask for a fresh quote with
-          your own random nonce, then paste it into Phala's verifier.
+          publishes it on chain, which only attested code can do, and the seal page encrypts to that on chain copy. The
+          agent also proves the key with a TDX quote whose report data commits to it. Ask for a fresh quote with your
+          own random nonce, then paste it into Phala's verifier.
         </p>
         <SealKeyProof keyData={key} />
       </Step>
@@ -111,6 +112,9 @@ export default function Trust() {
           <li>Hardware trust. You rely on Intel TDX, NVIDIA confidential computing and Phala's key management. A break in those breaks the seal.</li>
           <li>The contract owner approves which code may register. Approving malicious code could expose sealed sets, so the code is open source and its measurements are public on chain.</li>
           <li>The agent verifies the GPU attestation and every answer signature, but does not yet independently verify the TDX quotes of NEAR AI's gateway and model nodes. It records their hash so anyone can check them.</li>
+          <li>The seal key comes from Phala's key management for this app. Whoever controls the Phala app could deploy a build that derives the same key, so the app id and its compose hash are part of what you trust.</li>
+          <li>Evidence includes a hash of each request, which NEAR AI's signature covers. Someone who can guess a question word for word, with the same formatting, could confirm it was in the set.</li>
+          <li>If a payout or refund goes to an account that no longer exists, the NEAR stays in the contract.</li>
           <li>Leak risk runs really do show the questions to the provider. That is why authors must opt in.</li>
           <li>Graders compare answers by exact text, contained text, number or multiple choice. Open ended tasks are out of scope for now.</li>
           <li>This is a hackathon build on NEAR testnet.</li>
@@ -166,7 +170,7 @@ function SealKeyProof({ keyData }) {
         <Row k="Report data"><Mono>{k.report_data}</Mono></Row>
         <Row k="Commits to the key">
           <span className={bindingOk ? "text-sealed" : "text-bad"}>
-            {bindingOk ? "Yes, sha256 of the key matches the report data" : "No"}
+            {bindingOk ? "Report data matches the key. Verify the quote itself on Phala's explorer." : "No"}
           </span>
         </Row>
         {k.nonce ? <Row k="Your nonce"><Mono>{k.nonce}</Mono></Row> : null}

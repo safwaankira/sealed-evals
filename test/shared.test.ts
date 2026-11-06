@@ -37,7 +37,7 @@ test("sha256Hex matches known vector", () => {
 test("parseBenchmark validates", () => {
   assert.equal(parseBenchmark('{"items":[{"prompt":"a","answer":"b"}]}').items.length, 1);
   assert.throws(() => parseBenchmark("nope"), /valid JSON/);
-  assert.throws(() => parseBenchmark('{"items":[]}'), /1-10000/);
+  assert.throws(() => parseBenchmark('{"items":[]}'), /1-2000/);
   assert.throws(() => parseBenchmark('{"items":[{"prompt":"a"}]}'), /answer/);
   assert.throws(() => parseBenchmark('{"items":[{"prompt":"a","answer":"b","grader":"vibes"}]}'), /grader/);
 });

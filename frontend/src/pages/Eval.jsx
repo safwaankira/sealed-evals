@@ -168,6 +168,8 @@ function Verify({ e, b }) {
         for (const item of evidence.items ?? []) {
           if (!item.signature || !item.request_sha256 || !item.response_sha256) continue;
           checked++;
+          // only the model TEE's own signature proves where the question went
+          if (item.signature_kind !== "provider_tee") continue;
           const text =
             item.signature_kind === "provider_tee"
               ? `${evidence.model}:${item.request_sha256}:${item.response_sha256}`
@@ -220,26 +222,27 @@ function Verify({ e, b }) {
       <div className="flex flex-col gap-1">
         <h2 className="heading-6">Checked in your browser</h2>
         <p className="body-6 text-muted">
-          Nothing below takes the agent's word for it. Your browser fetched the evidence, hashed it and checked the
-          signatures. The evidence holds hashes and signatures only, never questions or answers.
+          Your browser fetched the evidence, hashed it against the chain and checked every answer signature itself.
+          The NVIDIA line relies on tokens the agent saved; download the evidence to verify them against NVIDIA's keys.
+          The evidence holds hashes and signatures only, never questions or answers.
         </p>
       </div>
       {s.error ? <ErrorNote error={s.error} /> : null}
       <ul className="flex flex-col divide-y divide-line">
         <Check ok={s.loading ? null : s.evHashOk} label="Evidence file matches the hash settled on chain" detail={r.evidence_hash} />
         <Check ok={s.loading ? null : s.atHashOk} label="Attestation report matches the hash settled on chain" detail={r.model_attestation_hash} />
-        <Check ok={s.loading ? null : s.setOk} label="Run used the exact benchmark the author sealed" detail={b.set_hash} />
-        <Check ok={s.loading ? null : s.scoreOk} label="Model, mode and score in the evidence match the chain" />
+        <Check ok={s.loading ? null : s.setOk} label="Evidence names the benchmark hash the author sealed" detail={b.set_hash} />
+        <Check ok={s.loading ? null : s.scoreOk} label="Model, mode and score in the evidence are consistent with the chain" />
         {r.mode === "Sealed" ? (
           <>
             <Check
-              ok={s.loading ? null : !!nv?.overall && !!nv?.nonceMatch}
-              label="NVIDIA verified the GPU attestation for this run's fresh nonce"
+              ok={s.loading ? null : !!nv?.overall && !!nv?.nonceMatch && !!ev?.model_attestation?.nras_response}
+              label="Agent reports NVIDIA passed the GPU attestation for this run's nonce, raw NVIDIA tokens included"
               detail={nv ? `${nv.gpus?.map((g) => g.hwmodel).filter(Boolean).join(", ") || "GPU"} · nonce ${short(ev.model_attestation.nonce, 10, 6)}` : null}
             />
             <Check
-              ok={s.loading ? null : s.checked > 0 && s.valid === s.checked && s.valid === r.verified_responses}
-              label={s.loading ? "Checking answer signatures" : `${s.valid} of ${s.checked} answer signatures recover to an attested key`}
+              ok={s.loading ? null : s.valid === r.total && r.verified_responses === r.total}
+              label={s.loading ? "Checking answer signatures" : `${s.valid} of ${r.total} answers are signed by the attested model TEE`}
               detail={ev ? `Model TEE keys: ${ev.model_attestation.model_signing_addresses.map((a) => short(a, 8, 6)).join(", ")}` : null}
             />
           </>

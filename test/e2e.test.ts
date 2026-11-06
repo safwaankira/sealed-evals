@@ -73,6 +73,7 @@ const server = http.createServer(async (req, res) => {
 
 // Fake contract client
 const calls: { methodName: string; args: any }[] = [];
+const settled = new Set<string>();
 const benchmark: any = {
   id: "0",
   author: "author.testnet",
@@ -90,9 +91,14 @@ const fakeAgent = {
   accountId: () => "agent.testnet",
   balance: async () => 1,
   fund: async () => {},
-  view: async ({ methodName }: any) => (methodName === "get_benchmark" ? { ...benchmark } : null),
+  view: async ({ methodName, args }: any) => {
+    if (methodName === "get_benchmark") return { ...benchmark };
+    if (methodName === "get_eval") return { id: args.eval_id, status: settled.has(args.eval_id) ? "Completed" : "Pending" };
+    return null;
+  },
   call: async (c: any) => {
     calls.push(c);
+    if (c.methodName === "submit_result") settled.add(c.args.eval_id);
     if (c.methodName === "seal_benchmark") Object.assign(benchmark, { item_count: c.args.item_count, sealed: true, sealed_by: "agent.testnet" });
     return true;
   },
@@ -157,7 +163,10 @@ test("author seals the benchmark", async () => {
   assert.ok(!onDisk.toString("latin1").includes("Canberra"));
 });
 
-const ev = (id: string, model: string) => ({ id, requester: "r.testnet", benchmark_id: "0", model, paid: "1", status: "Pending", created_ms: "1", result: null, failure_reason: null });
+const ev = (id: string, model: string, allow_leak_risk = false) => ({
+  id, requester: "r.testnet", benchmark_id: "0", model, paid: "1000000000000000000000000",
+  status: "Pending", created_ms: "1", allow_leak_risk, claimed_ms: null, result: null, failure_reason: null,
+});
 
 test("sealed run scores inside the TEE with verified signatures", async () => {
   calls.length = 0;
@@ -168,6 +177,7 @@ test("sealed run scores inside the TEE with verified signatures", async () => {
   assert.equal(submit!.args.total, 12);
   assert.equal(submit!.args.correct, 11);
   assert.equal(submit!.args.verified_responses, 12);
+  assert.ok(calls.findIndex((c) => c.methodName === "claim_eval") < calls.indexOf(submit!), "claims before settling");
 
   const evidence = await mods.store.loadEvidence("1", "evidence");
   assert.equal(sha(evidence), submit!.args.evidence_hash);
@@ -177,9 +187,12 @@ test("sealed run scores inside the TEE with verified signatures", async () => {
     assert.ok(!evidence.includes(item.prompt.slice(0, 20)), "evidence must not contain prompts");
   }
   assert.ok(!evidence.includes("Canberra") && !evidence.includes("Sydney"), "evidence must not contain answers");
+  assert.ok(!evidence.includes('"correct": true'), "no per-item correctness in public evidence");
+  assert.ok(JSON.parse(evidence).model_attestation.nras_response, "raw NVIDIA response kept for independent checks");
 });
 
 test("a saved result is resubmitted without asking the model again", async () => {
+  settled.delete("1");
   calls.length = 0;
   const before = promptsSeenBy.get("tee/qwen");
   await mods.runner.runEval(ev("1", "tee/qwen"), { ...benchmark });
@@ -187,9 +200,16 @@ test("a saved result is resubmitted without asking the model again", async () =>
   assert.equal(calls[0].methodName, "submit_result");
 });
 
+test("settled evals are never run again", async () => {
+  calls.length = 0;
+  await mods.runner.runEval(ev("1", "tee/qwen"), { ...benchmark });
+  assert.equal(calls.length, 0);
+});
+
 test("unattested model is refused before any question is sent", async () => {
   calls.length = 0;
-  await mods.runner.runEval(ev("2", "closed/gpt"), { ...benchmark, allow_leak_risk: false });
+  // the author allows leak risk now, but didn't when this run was paid for: the snapshot wins
+  await mods.runner.runEval(ev("2", "closed/gpt", false), { ...benchmark, allow_leak_risk: true });
   assert.equal(calls[0].methodName, "fail_eval");
   assert.match(calls[0].args.reason, /No questions were sent/);
   assert.equal(promptsSeenBy.get("closed/gpt") ?? 0, 0);
@@ -197,18 +217,26 @@ test("unattested model is refused before any question is sent", async () => {
 
 test("leak risk run happens only when the author allowed it, and is labeled", async () => {
   calls.length = 0;
-  await mods.runner.runEval(ev("3", "closed/gpt"), { ...benchmark, allow_leak_risk: true });
+  await mods.runner.runEval(ev("3", "closed/gpt", true), { ...benchmark, allow_leak_risk: true });
   const submit = calls.find((c) => c.methodName === "submit_result")!;
   assert.equal(submit.args.mode, "LeakRisk");
   assert.equal(submit.args.verified_responses, 0);
   assert.equal(promptsSeenBy.get("closed/gpt"), 12);
 });
 
-test("answers signed by an unattested key are not counted as verified", async () => {
+test("an answer signed by an unattested key stops a sealed run and refunds it", async () => {
   calls.length = 0;
   await mods.runner.runEval(ev("4", "tee/evil"), { ...benchmark });
-  const submit = calls.find((c) => c.methodName === "submit_result")!;
-  assert.equal(submit.args.verified_responses, 0);
+  assert.ok(!calls.some((c) => c.methodName === "submit_result"));
+  assert.match(calls.find((c) => c.methodName === "fail_eval")!.args.reason, /stopped/);
+  assert.ok((promptsSeenBy.get("tee/evil") ?? 0) < 12, "stops sending questions early");
+});
+
+test("runs priced below the operator minimum are refused before any question", async () => {
+  calls.length = 0;
+  await mods.runner.runEval({ ...ev("5", "tee/cheap"), paid: "1" }, { ...benchmark });
+  assert.match(calls[0].args.reason, /minimum/);
+  assert.equal(promptsSeenBy.get("tee/cheap") ?? 0, 0);
 });
 
 test("evidence is served over the API", async () => {
@@ -216,6 +244,10 @@ test("evidence is served over the API", async () => {
   assert.equal(res.status, 200);
   assert.equal((await res.json()).mode, "Sealed");
   assert.equal((await mods.api.request("/evals/99/evidence")).status, 404);
+  // evidence for an unsettled run stays private
+  assert.equal((await mods.api.request("/evals/3/attestation")).status, 200);
+  settled.delete("3");
+  assert.equal((await mods.api.request("/evals/3/evidence")).status, 404);
   assert.equal((await mods.api.request("/evals/..%2F..%2Fx/evidence")).status, 400);
 });
 

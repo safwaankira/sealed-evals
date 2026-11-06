@@ -17,7 +17,7 @@ export interface BenchmarkFile {
 }
 
 export const LIMITS = {
-  maxItems: 10_000,
+  maxItems: 2_000,
   maxPromptChars: 8_000,
   maxAnswerChars: 500,
   maxSystemChars: 2_000,

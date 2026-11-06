@@ -19,12 +19,16 @@ use near_sdk::{PromiseOrValue, store::Vector};
 
 /// Requesters can reclaim escrow if the agent hasn't answered within this window.
 pub const EVAL_TIMEOUT_MS: u64 = 60 * 60 * 1000; // 1 hour
+/// Once the agent has claimed a run, the window grows with the benchmark size.
+pub const RUN_MS_PER_ITEM: u64 = 15_000;
+/// Storage the settled result (or failure reason) will add later, paid up front by the requester.
+pub const RESULT_RESERVE_BYTES: u128 = 600;
 
 const MAX_NAME_LEN: usize = 64;
 const MAX_DESCRIPTION_LEN: usize = 500;
 const MAX_MODEL_LEN: usize = 128;
 const MAX_REASON_LEN: usize = 200;
-const MAX_ITEMS: u32 = 10_000;
+const MAX_ITEMS: u32 = 2_000;
 
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,6 +92,10 @@ pub struct Eval {
     pub paid: NearToken,
     pub status: EvalStatus,
     pub created_ms: u64,
+    /// Author's leak-risk policy at request time, so it can't be flipped mid-run
+    pub allow_leak_risk: bool,
+    /// Set when the agent starts the run; extends the reclaim window
+    pub claimed_ms: Option<u64>,
     pub result: Option<EvalResult>,
     pub failure_reason: Option<String>,
 }
@@ -120,6 +128,8 @@ pub struct EvalView {
     pub paid: NearToken,
     pub status: EvalStatus,
     pub created_ms: U64,
+    pub allow_leak_risk: bool,
+    pub claimed_ms: Option<U64>,
     pub result: Option<EvalResult>,
     pub failure_reason: Option<String>,
 }
@@ -153,6 +163,8 @@ pub(crate) fn eval_view(id: u64, e: &Eval) -> EvalView {
         paid: e.paid,
         status: e.status.clone(),
         created_ms: U64(e.created_ms),
+        allow_leak_risk: e.allow_leak_risk,
+        claimed_ms: e.claimed_ms.map(U64),
         result: e.result.clone(),
         failure_reason: e.failure_reason.clone(),
     }
@@ -323,6 +335,7 @@ impl Contract {
         require!(benchmark.active, "Benchmark is retired");
         require!(benchmark.sealed_by.is_some(), "Benchmark is not sealed yet");
         let price = benchmark.price;
+        let allow_leak_risk = benchmark.allow_leak_risk;
 
         let id = self.next_eval_id;
         self.next_eval_id += 1;
@@ -336,6 +349,8 @@ impl Contract {
                 paid: price,
                 status: EvalStatus::Pending,
                 created_ms: block_timestamp_ms(),
+                allow_leak_risk,
+                claimed_ms: None,
                 result: None,
                 failure_reason: None,
             },
@@ -359,7 +374,10 @@ impl Contract {
         );
 
         self.flush_sealed();
-        self.settle_storage_deposit(initial, price);
+        let result_reserve = env::storage_byte_cost()
+            .checked_mul(RESULT_RESERVE_BYTES)
+            .expect("reserve overflow");
+        self.settle_storage_deposit(initial, price.checked_add(result_reserve).expect("overflow"));
         U64(id)
     }
 
@@ -367,12 +385,19 @@ impl Contract {
     pub fn reclaim_eval(&mut self, eval_id: U64) -> Promise {
         let caller = env::predecessor_account_id();
         let now = block_timestamp_ms();
+        let item_count = {
+            let e = self.evals.get(&eval_id.0).expect("Eval not found");
+            self.benchmarks.get(&e.benchmark_id).map(|b| b.item_count).unwrap_or(0)
+        };
         let eval = self.take_pending_eval(eval_id.0);
         require!(eval.requester == caller, "Only the requester can reclaim");
-        require!(
-            now >= eval.created_ms.saturating_add(EVAL_TIMEOUT_MS),
-            "Eval has not timed out yet"
-        );
+        let deadline = match eval.claimed_ms {
+            Some(claimed) => claimed
+                .saturating_add(EVAL_TIMEOUT_MS)
+                .saturating_add(RUN_MS_PER_ITEM.saturating_mul(item_count as u64)),
+            None => eval.created_ms.saturating_add(EVAL_TIMEOUT_MS),
+        };
+        require!(now >= deadline, "Eval has not timed out yet");
         eval.status = EvalStatus::Refunded;
         eval.failure_reason = Some("Timed out, reclaimed by requester".to_string());
         let paid = eval.paid;
@@ -411,6 +436,30 @@ impl Contract {
         PromiseOrValue::Value(true)
     }
 
+    /// Agent-only: mark a run as started so the requester can't reclaim mid-run.
+    pub fn claim_eval(&mut self, eval_id: U64) -> PromiseOrValue<bool> {
+        if let Some(failure) = self.require_valid_agent() {
+            return PromiseOrValue::Promise(failure);
+        }
+        let now = block_timestamp_ms();
+        let eval = self.take_pending_eval(eval_id.0);
+        if eval.claimed_ms.is_none() {
+            eval.claimed_ms = Some(now);
+        }
+        PromiseOrValue::Value(true)
+    }
+
+    /// Agent-only: publish the X25519 key authors encrypt to. Because only attested code can call
+    /// this, the web app reads the key from here instead of trusting whoever serves the page.
+    pub fn set_seal_key(&mut self, public_key: String) -> PromiseOrValue<bool> {
+        if let Some(failure) = self.require_valid_agent() {
+            return PromiseOrValue::Promise(failure);
+        }
+        require!(is_sha256_hex(&public_key), "public_key must be 32 bytes of lowercase hex");
+        self.seal_keys.insert(env::predecessor_account_id(), public_key);
+        PromiseOrValue::Value(true)
+    }
+
     /// Agent-only: publish the score and pay the benchmark author.
     #[allow(clippy::too_many_arguments)]
     pub fn submit_result(
@@ -434,19 +483,24 @@ impl Contract {
         let agent = env::predecessor_account_id();
         let now = block_timestamp_ms();
 
-        let (benchmark_id, paid) = {
+        let (benchmark_id, paid, allow_leak_risk) = {
             let eval = self.take_pending_eval(eval_id.0);
-            (eval.benchmark_id, eval.paid)
+            (eval.benchmark_id, eval.paid, eval.allow_leak_risk)
         };
-        let (author, item_count, allow_leak_risk) = {
+        let (author, item_count) = {
             let b = self.benchmarks.get(&benchmark_id).expect("Benchmark not found");
-            (b.author.clone(), b.item_count, b.allow_leak_risk)
+            (b.author.clone(), b.item_count)
         };
         require!(total == item_count, "total must equal the sealed item count");
         require!(correct <= total, "correct cannot exceed total");
         require!(verified_responses <= total, "verified_responses cannot exceed total");
         if mode == RunMode::LeakRisk {
             require!(allow_leak_risk, "Author does not allow leak-risk runs");
+        } else {
+            require!(
+                verified_responses == total,
+                "A sealed run needs a verified TEE signature on every answer"
+            );
         }
         let score_bps = ((correct as u64) * 10_000 / (total as u64)) as u32;
 
@@ -511,6 +565,10 @@ impl Contract {
 
     // ---------- Views ----------
 
+    pub fn get_seal_key(&self, account_id: AccountId) -> Option<String> {
+        self.seal_keys.get(&account_id).cloned()
+    }
+
     pub fn get_benchmark(&self, benchmark_id: U64) -> Option<BenchmarkView> {
         self.benchmarks
             .get(&benchmark_id.0)
@@ -559,11 +617,12 @@ impl Contract {
             .collect()
     }
 
-    /// Oldest first, for the agent's work queue.
-    pub fn get_pending_evals(&self, limit: Option<u32>) -> Vec<EvalView> {
-        let mut ids: Vec<u64> = self.pending_evals.iter().copied().collect();
-        ids.sort_unstable();
-        ids.into_iter()
+    /// Pending evals for the agent's work queue (paged; the agent pages through all of them).
+    pub fn get_pending_evals(&self, from_index: Option<u32>, limit: Option<u32>) -> Vec<EvalView> {
+        self.pending_evals
+            .iter()
+            .copied()
+            .skip(from_index.unwrap_or(0) as usize)
             .take(limit.unwrap_or(20).min(100) as usize)
             .filter_map(|id| self.evals.get(&id).map(|e| eval_view(id, e)))
             .collect()

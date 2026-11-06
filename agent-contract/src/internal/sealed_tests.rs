@@ -168,7 +168,7 @@ fn full_sealed_run_pays_author() {
 
     ctx(requester(), ONE_NEAR.saturating_add(STORAGE), 4_000);
     let eval_id = c.request_eval(id, "Qwen/Qwen3-30B".into());
-    assert_eq!(c.get_pending_evals(None).len(), 1);
+    assert_eq!(c.get_pending_evals(None, None).len(), 1);
 
     ctx(agent(), NearToken::from_yoctonear(0), 5_000);
     let out = c.submit_result(eval_id, RunMode::Sealed, 7, 10, 10, EVID.into(), HASH.into());
@@ -186,7 +186,7 @@ fn full_sealed_run_pays_author() {
     let r = e.result.unwrap();
     assert_eq!(r.score_bps, 7_000);
     assert_eq!(r.mode, RunMode::Sealed);
-    assert!(c.get_pending_evals(None).is_empty());
+    assert!(c.get_pending_evals(None, None).is_empty());
     let b = c.get_benchmark(id).unwrap();
     assert_eq!(b.runs, 1);
     assert_eq!(b.earned, ONE_NEAR);
@@ -264,7 +264,7 @@ fn fail_eval_refunds_requester() {
     );
     let e = c.get_eval(eval_id).unwrap();
     assert_eq!(e.status, EvalStatus::Failed);
-    assert!(c.get_pending_evals(None).is_empty());
+    assert!(c.get_pending_evals(None, None).is_empty());
 }
 
 #[test]
@@ -362,6 +362,58 @@ fn evals_listed_newest_first() {
     let list = c.get_evals(None, None);
     assert_eq!(list.len(), 3);
     assert_eq!(list[0].model, "model-2");
-    assert_eq!(c.get_pending_evals(Some(2)).len(), 2);
-    assert_eq!(c.get_pending_evals(None)[0].model, "model-0");
+    assert_eq!(c.get_pending_evals(None, Some(2)).len(), 2);
+    assert_eq!(c.get_pending_evals(None, None).len(), 3);
+}
+
+#[test]
+#[should_panic(expected = "A sealed run needs a verified TEE signature on every answer")]
+fn sealed_requires_every_answer_verified() {
+    let mut c = setup();
+    let id = registered_and_sealed(&mut c, ONE_NEAR, false);
+    ctx(requester(), ONE_NEAR.saturating_add(STORAGE), 4_000);
+    let eval_id = c.request_eval(id, "Qwen/Qwen3-30B".into());
+    ctx(agent(), NearToken::from_yoctonear(0), 5_000);
+    let _ = c.submit_result(eval_id, RunMode::Sealed, 7, 10, 9, EVID.into(), HASH.into());
+}
+
+#[test]
+fn leak_policy_is_snapshotted_at_request_time() {
+    let mut c = setup();
+    let id = registered_and_sealed(&mut c, ONE_NEAR, true);
+    ctx(requester(), ONE_NEAR.saturating_add(STORAGE), 4_000);
+    let eval_id = c.request_eval(id, "anthropic/claude".into());
+    // author flips the policy mid-run; the run that was requested under it still settles
+    ctx(author(), NearToken::from_yoctonear(0), 4_500);
+    c.update_benchmark(id, None, Some(false), None);
+    ctx(agent(), NearToken::from_yoctonear(0), 5_000);
+    let _ = c.submit_result(eval_id, RunMode::LeakRisk, 5, 10, 0, EVID.into(), HASH.into());
+    assert_eq!(c.get_eval(eval_id).unwrap().status, EvalStatus::Completed);
+}
+
+#[test]
+#[should_panic(expected = "Eval has not timed out yet")]
+fn claimed_runs_get_a_longer_window() {
+    let mut c = setup();
+    let id = registered_and_sealed(&mut c, ONE_NEAR, false);
+    ctx(requester(), ONE_NEAR.saturating_add(STORAGE), 4_000);
+    let eval_id = c.request_eval(id, "Qwen/Qwen3-30B".into());
+    ctx(agent(), NearToken::from_yoctonear(0), 5_000);
+    let _ = c.claim_eval(eval_id);
+    // past the base timeout from creation, but still inside the claimed window (10 items x 15s)
+    ctx(requester(), NearToken::from_yoctonear(0), 5_000 + sealed::EVAL_TIMEOUT_MS + 60_000);
+    drop(c.reclaim_eval(eval_id));
+}
+
+#[test]
+fn seal_key_is_agent_only_and_readable() {
+    let mut c = setup();
+    ctx(agent(), NearToken::from_yoctonear(0), 2_000);
+    let _ = c.set_seal_key(HASH.into());
+    assert_eq!(c.get_seal_key(agent()), Some(HASH.to_string()));
+    ctx(stranger(), NearToken::from_yoctonear(0), 2_000);
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = c.set_seal_key(EVID.into());
+    }));
+    assert!(r.is_err());
 }

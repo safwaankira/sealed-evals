@@ -48,6 +48,7 @@ pub struct Contract {
     pub benchmark_evals: near_sdk::store::LookupMap<u64, near_sdk::store::Vector<u64>>,
     pub next_benchmark_id: u64,
     pub next_eval_id: u64,
+    pub seal_keys: near_sdk::store::LookupMap<AccountId, String>,
 }
 
 #[near(serializers = [borsh])]
@@ -69,6 +70,7 @@ pub enum StorageKey {
     PendingEvals,
     BenchmarkEvalsIndex,
     BenchmarkEvals { benchmark_id: u64 },
+    SealKeys,
 }
 
 const STORAGE_BYTES_TO_REGISTER: u128 = 486;
@@ -98,6 +100,7 @@ impl Contract {
             benchmark_evals: near_sdk::store::LookupMap::new(StorageKey::BenchmarkEvalsIndex),
             next_benchmark_id: 0,
             next_eval_id: 0,
+            seal_keys: near_sdk::store::LookupMap::new(StorageKey::SealKeys),
         }
     }
 

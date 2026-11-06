@@ -65,6 +65,7 @@ export interface ModelAttestation {
   modelSigningAddresses: string[];
   gatewaySigningAddresses: string[];
   nvidia: NvidiaSummary | null;
+  nrasRaw: unknown;
 }
 
 function decodeJwtPayload(token: string): Record<string, any> | null {
@@ -108,7 +109,7 @@ export function summarizeNras(nras: unknown, nonce: string): NvidiaSummary {
   };
 }
 
-async function verifyWithNvidia(nvidiaPayload: unknown, nonce: string): Promise<NvidiaSummary> {
+async function verifyWithNvidia(nvidiaPayload: unknown, nonce: string): Promise<{ summary: NvidiaSummary; raw: unknown }> {
   const body = typeof nvidiaPayload === "string" ? nvidiaPayload : JSON.stringify(nvidiaPayload);
   const res = await fetchWithTimeout(
     config.nvidiaNrasUrl,
@@ -116,7 +117,8 @@ async function verifyWithNvidia(nvidiaPayload: unknown, nonce: string): Promise<
     60_000,
   );
   if (!res.ok) throw await httpError(res, "NVIDIA attestation failed");
-  return summarizeNras(await res.json(), nonce);
+  const raw = await res.json();
+  return { summary: summarizeNras(raw, nonce), raw };
 }
 
 export async function attestModel(model: string): Promise<ModelAttestation> {
@@ -135,6 +137,7 @@ export async function attestModel(model: string): Promise<ModelAttestation> {
   const gatewaySigningAddresses = typeof gatewayAddr === "string" ? [gatewayAddr] : [];
 
   const base = {
+    nrasRaw: null as unknown,
     nonce,
     reportJson,
     reportSha256: sha256Hex(reportJson),
@@ -145,9 +148,15 @@ export async function attestModel(model: string): Promise<ModelAttestation> {
   if (modelAttestations.length === 0 || modelSigningAddresses.length === 0) {
     return { ...base, sealed: false, reason: "Model is not served from an attested TEE", nvidia: null };
   }
+  // freshness: the report must echo our nonce
   const echoed = report.request_nonce ?? report.nonce ?? modelAttestations[0]?.request_nonce;
-  if (typeof echoed === "string" && echoed.toLowerCase() !== nonce) {
+  if (typeof echoed !== "string" || echoed.toLowerCase() !== nonce) {
     return { ...base, sealed: false, reason: "Attestation did not echo our nonce", nvidia: null };
+  }
+  // the report must be about the model we asked for, when it says which model it covers
+  const reported = report.model ?? report.model_name ?? modelAttestations[0]?.model_name ?? modelAttestations[0]?.model;
+  if (typeof reported === "string" && reported !== model) {
+    return { ...base, sealed: false, reason: "Attestation is for a different model", nvidia: null };
   }
   const payload = modelAttestations.find((a) => a?.nvidia_payload)?.nvidia_payload;
   if (!payload) {
@@ -155,7 +164,9 @@ export async function attestModel(model: string): Promise<ModelAttestation> {
   }
   let nvidia: NvidiaSummary;
   try {
-    nvidia = await verifyWithNvidia(payload, nonce);
+    const out = await verifyWithNvidia(payload, nonce);
+    nvidia = out.summary;
+    base.nrasRaw = out.raw;
   } catch (e) {
     return { ...base, sealed: false, reason: `GPU attestation could not be verified (${(e as Error).message.slice(0, 80)})`, nvidia: null };
   }

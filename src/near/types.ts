@@ -41,6 +41,8 @@ export interface EvalView {
   paid: string;
   status: EvalStatus;
   created_ms: string;
+  allow_leak_risk: boolean;
+  claimed_ms: string | null;
   result: EvalResult | null;
   failure_reason: string | null;
 }
