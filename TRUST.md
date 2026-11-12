@@ -41,9 +41,24 @@ Below, each link in that claim, the code that enforces it, and how to check it y
 | Requesters can always get their escrow back if the agent stalls | `reclaim_eval` after the timeout | unit tests `reclaim_after_timeout_refunds`, `claimed_runs_get_a_longer_window` |
 | Evidence reveals no questions, answers or per-item correctness | `runEval` builds evidence from hashes and signatures only | e2e test asserts no prompt or answer text and no per-item `correct` |
 
+## 5. Attestation is not a bug shield
+
+On 8 Nov 2026 NEAR AI Cloud disclosed a vulnerability in its serving software; its
+[incident report](https://near.ai/blog/security-incident-report-sglang-vulnerability) says requests in
+confidential mode could have been observed, and that a TEE does not protect against a flaw in the
+software running inside it. That applies to this agent's code too. What Sealed Evals does about it:
+
+| Measure | Where |
+|---|---|
+| A fresh attestation and NVIDIA check for every run, never a cached one | `attestModel` is called inside `runEval` |
+| The exact attestation report and raw NVIDIA response are kept, hashed and settled with the score, so a run can be re-judged later against known-bad measurements | `submit_result(model_attestation_hash)`, evidence `nras_response` |
+| Authors can retire a benchmark at any time; retired sets stop accepting runs | `update_benchmark(active: false)` |
+| A sealed set that passed through a compromised serving stack should be treated as exposed and rotated | author guidance; the leaderboard keeps each run's date |
+
 ## Reproduce
 
 ```bash
+npm run judge                                       # everything below in one command
 npm ci && npm test                                  # 19 agent tests, incl. end-to-end with mock NEAR AI + NVIDIA
 cd agent-contract && cargo test --lib               # 78 contract tests
 ```

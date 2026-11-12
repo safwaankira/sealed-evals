@@ -2,6 +2,21 @@
 
 **Hidden AI benchmarks, scored inside a TEE, paid per run on NEAR.**
 
+**It attests the grader, not just the answers.** The code that holds the questions and does the
+grading runs in an enclave the NEAR contract verified, so you don't have to trust whoever operates it.
+
+**Who pays whom:** anyone who wants a score pays the benchmark author's price in NEAR per run. The
+contract holds it in escrow and pays the author when the score settles, or refunds the requester.
+
+| Status | What | Check |
+|---|---|---|
+| Works, tested | Contract: registry, escrow, agent-only settlement, strict Sealed rule, refunds | `cargo test --lib` (78 tests) |
+| Works, tested | Agent: sealing, NEAR AI attestation + NVIDIA gate, per-answer signature checks, evidence | `npm test` (19 tests, end to end against mocks) |
+| Works | Web app: leaderboard, seal, pay-to-run, in-browser re-verification, tamper button | no wallet needed to view or verify |
+| Pending | Live Shade Agent on Phala + testnet contract, with real runs | links added here once deployed |
+
+One command for all of it: `npm run judge`.
+
 Benchmarks stop meaning anything once their questions leak into training data. Sealed Evals keeps the
 questions inside attested hardware for their whole life:
 
@@ -94,6 +109,13 @@ Open source code reused under its license, as the hackathon rules allow:
 * Prior art credited: Ritual's Evault proposal and ManaTEE described TEE-verified evals; Sealed Evals is a working NEAR-native implementation with per-run payments and leak labels.
 
 ## Related work in this hackathon
+
+Closest entries, all worth a look: [BlindBench](https://github.com/yfarmxdev/blindbench) (private evals
+that pay authors), [PROCTOR](https://github.com/egbujor-emmanuel/proctor) (sealed exams for agents on
+OutLayer) and [Laurel](https://github.com/agadape/laurel) (small models scored on a private test set).
+Sealed Evals differs in three enforced rules: the grader itself runs in an enclave the contract attested,
+a failed NVIDIA check blocks scoring instead of being recorded, and a run is only Sealed if every answer
+is signed by the attested model.
 
 Other entries seal different things, and Sealed Evals borrows ideas from their presentation:
 [TEE Receipts](https://github.com/tmdry4530/tee-receipts) records NEAR AI Cloud signatures on chain,
