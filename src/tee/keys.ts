@@ -28,6 +28,42 @@ export interface TeeKeys {
   quote: string | null;
   appId: string | null;
   composeHash: string | null;
+  /** This enclave's own measurements, in the shape the contract's approve_measurements takes */
+  measurements: FullMeasurements | null;
+}
+
+export interface FullMeasurements {
+  rtmrs: { mrtd: string; rtmr0: string; rtmr1: string; rtmr2: string };
+  key_provider_event_digest: string;
+  app_compose_hash_payload: string;
+}
+
+const strip0x = (h: unknown) => (typeof h === "string" ? h.replace(/^0x/i, "").toLowerCase() : "");
+
+function measurementsFromInfo(info: any): FullMeasurements | null {
+  let tcb = info?.tcb_info;
+  if (typeof tcb === "string") {
+    try {
+      tcb = JSON.parse(tcb);
+    } catch {
+      return null;
+    }
+  }
+  if (!tcb?.mrtd) return null;
+  let log = tcb.event_log;
+  if (typeof log === "string") {
+    try {
+      log = JSON.parse(log);
+    } catch {
+      log = [];
+    }
+  }
+  const keyProvider = (Array.isArray(log) ? log : []).find((e: any) => e?.event === "key-provider");
+  return {
+    rtmrs: { mrtd: strip0x(tcb.mrtd), rtmr0: strip0x(tcb.rtmr0), rtmr1: strip0x(tcb.rtmr1), rtmr2: strip0x(tcb.rtmr2) },
+    key_provider_event_digest: strip0x(keyProvider?.digest),
+    app_compose_hash_payload: strip0x(tcb.compose_hash ?? info?.compose_hash),
+  };
 }
 
 function domainHash(label: string, material: Uint8Array): Uint8Array {
@@ -53,10 +89,12 @@ export async function initKeys(): Promise<TeeKeys> {
     const quoteRes = await client.getQuote(hexToBytes(reportData));
     let appId: string | null = null;
     let composeHash: string | null = null;
+    let measurements: FullMeasurements | null = null;
     try {
       const info = await client.info();
       appId = info.app_id ?? null;
       composeHash = info.compose_hash ?? (info.tcb_info as any)?.compose_hash ?? null;
+      measurements = measurementsFromInfo(info);
     } catch {
       // info is optional context for the UI
     }
@@ -69,6 +107,7 @@ export async function initKeys(): Promise<TeeKeys> {
       quote: quoteRes.quote,
       appId,
       composeHash,
+      measurements,
     };
   } else {
     const secret = utf8ToBytes(config.localSealSecret || `local:${config.sponsorPrivateKey}`);
@@ -83,6 +122,7 @@ export async function initKeys(): Promise<TeeKeys> {
       quote: null,
       appId: null,
       composeHash: null,
+      measurements: null,
     };
   }
   return cached;

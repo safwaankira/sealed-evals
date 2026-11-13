@@ -1,5 +1,5 @@
 # environment: local | TEE
-environment: local
+environment: TEE
 
 # network: testnet | mainnet
 network: testnet
@@ -12,15 +12,16 @@ agent_contract:
   # Fill this out with a unique contract id for your agent contract
   # For example: example-contract-123.testnet
   # This account should not already be in use
-  contract_id:
+  contract_id: sealed-evals.occasionally-how.testnet
 
   # Optional, if not enabled the contract will not be deployed
   # and it's assumed the agent contract is already deployed to the contract_id
   # and is initialized
   deploy_custom:
-    enabled: true
+    # contract already deployed and initialized on 13 Nov; keep it
+    enabled: false
     # Amount to fund the agent contract with in NEAR
-    funding_amount: 8
+    funding_amount: 9
     # If true the key for contract account will be deleted after deployment locking it
     delete_key: false
 
@@ -59,7 +60,9 @@ agent_contract:
 # Approve allowed measurements for registration
 # Optional, if not enabled the measurements will not be approved
 approve_measurements:
-  enabled: true
+  # Phala's KMS only accepts OS images newer than the CLI's measurement table, so this is run
+  # separately with the measurements the running enclave reports at /api/agent-info.
+  enabled: false
   method_name: approve_measurements
   # <MEASUREMENTS> will be replaced with calculated measurements
   # for local it will be set to default measurements (all zeros)
@@ -94,7 +97,7 @@ approve_ppids:
 build_docker_image:
   enabled: true
   # Fill this out with the docker tag you want to use. For example: pivortex/my-first-agent
-  tag:
+  tag: predaconus/sealed-evals
   cache: true
   dockerfile_path: ./Dockerfile
   reproducible_build: false
@@ -107,7 +110,7 @@ deploy_to_phala:
   app_name: sealed-evals
   env_file_path: ./.env
   # The dstack OS version the agent is deployed with
-  dstack_version: 0.5.8
+  dstack_version: 0.5.12
   # The virtual hardware given to the TEE
   instance_type: tdx.small
   # If true TEE logs are public

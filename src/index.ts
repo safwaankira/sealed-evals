@@ -8,6 +8,7 @@ import { initAgent } from "./near/agent";
 import { initKeys } from "./tee/keys";
 import { initStore } from "./tee/store";
 import { startWorker } from "./eval/worker";
+import { markRegistered } from "./registration";
 import api from "./routes/api";
 
 const agent = await initAgent();
@@ -19,24 +20,40 @@ if (process.env.NODE_ENV === "production" && keys.mode !== "tee") {
 await initStore();
 console.log(`Agent ${agent.accountId()} | contract ${config.agentContractId} | TEE mode: ${keys.mode}`);
 console.log(`Seal public key: ${keys.sealPublicKeyHex}`);
+if (keys.measurements) console.log(`Measurements: ${JSON.stringify(keys.measurements)}`);
+
+// Serve the API and web app first, so this enclave's measurements can be read (and approved)
+// before it is registered. Nothing that touches benchmarks works until registration succeeds:
+// sealing and settling are agent-only calls the contract refuses to unregistered agents.
+const app = new Hono();
+app.use("/api/*", cors());
+app.route("/api", api);
+if (existsSync(config.publicDir)) {
+  app.use("/*", serveStatic({ root: config.publicDir }));
+  app.get("*", serveStatic({ path: `${config.publicDir}/index.html` }));
+}
+serve({ fetch: app.fetch, port: config.port });
+console.log(`Sealed Evals agent listening on :${config.port}`);
 
 if ((await agent.balance()) < 0.2) await agent.fund(0.3);
 
-// Register with the contract: in a TEE this submits the attestation the contract verifies
+// Register with the contract: in a TEE this submits the attestation the contract verifies.
+// Retries slowly, since each failed attempt costs gas while the measurements await approval.
 while (true) {
   try {
     const isWhitelisted = await agent.isWhitelisted();
     if (isWhitelisted === null || isWhitelisted) {
       if (await agent.register()) {
         console.log("Agent registered");
+        markRegistered();
         break;
       }
     }
   } catch (error) {
-    console.error("Registration error:", (error as Error).message);
+    console.error("Registration error:", (error as Error).message?.slice(0, 300));
   }
-  console.log("Waiting to be whitelisted (local mode) or for registration to succeed...");
-  await new Promise((r) => setTimeout(r, 10_000));
+  console.log("Not registered yet (measurements or PPID not approved?). Retrying in 60s");
+  await new Promise((r) => setTimeout(r, 60_000));
 }
 
 // Publish the seal key on chain: only attested code can, so the web app trusts this copy
@@ -62,16 +79,4 @@ async function keepRegistered() {
 }
 setTimeout(keepRegistered, 24 * 60 * 60 * 1000);
 
-const app = new Hono();
-app.use("/api/*", cors());
-app.route("/api", api);
-
-// The web app is built into the same image, so the UI people use is part of the attested code
-if (existsSync(config.publicDir)) {
-  app.use("/*", serveStatic({ root: config.publicDir }));
-  app.get("*", serveStatic({ path: `${config.publicDir}/index.html` }));
-}
-
 startWorker();
-serve({ fetch: app.fetch, port: config.port });
-console.log(`Sealed Evals agent listening on :${config.port}`);

@@ -8,6 +8,7 @@ import { LIMITS, parseBenchmark } from "../shared/benchmark";
 import { hasSealedBenchmark, loadEvidence, saveSealedBenchmark } from "../tee/store";
 import { listModels } from "../nearai/client";
 import { workerStatus } from "../eval/worker";
+import { isRegistered } from "../registration";
 import type { BenchmarkView } from "../near/types";
 
 const api = new Hono();
@@ -41,6 +42,10 @@ api.get("/agent-info", async (c) => {
     seal_public_key: k.sealPublicKeyHex,
     app_id: k.appId,
     compose_hash: k.composeHash,
+    // This enclave's own measurements as reported by dstack. The contract owner approves exactly
+    // these, and the contract re-checks them against the hardware quote at registration.
+    measurements: k.measurements,
+    registered: isRegistered(),
     worker: workerStatus(),
   });
 });
