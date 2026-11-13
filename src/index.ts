@@ -35,7 +35,8 @@ if (existsSync(config.publicDir)) {
 serve({ fetch: app.fetch, port: config.port });
 console.log(`Sealed Evals agent listening on :${config.port}`);
 
-if ((await agent.balance()) < 0.2) await agent.fund(0.3);
+// register() reserves ~0.31 NEAR of gas, so keep comfortably more than that
+if ((await agent.balance()) < 0.4) await agent.fund(0.4);
 
 // Register with the contract: in a TEE this submits the attestation the contract verifies.
 // Retries slowly, since each failed attempt costs gas while the measurements await approval.

@@ -70,7 +70,7 @@ export function startWorker(): void {
     try {
       await tick();
       // keep enough NEAR for gas
-      if ((await agent().balance()) < 0.15) await agent().fund(0.3);
+      if ((await agent().balance()) < 0.4) await agent().fund(0.3);
     } catch (e) {
       lastError = `poll: ${(e as Error).message?.slice(0, 200)}`;
       console.error(lastError);
