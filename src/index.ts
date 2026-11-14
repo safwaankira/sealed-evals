@@ -35,12 +35,24 @@ if (existsSync(config.publicDir)) {
 serve({ fetch: app.fetch, port: config.port });
 console.log(`Sealed Evals agent listening on :${config.port}`);
 
-// register() reserves ~0.31 NEAR of gas, so keep comfortably more than that
-if ((await agent.balance()) < 0.4) await agent.fund(0.4);
+// register() reserves ~0.31 NEAR of gas, so keep comfortably more than that. The agent gets a
+// fresh account on every boot, so the sponsor pays this each time. If the sponsor is short,
+// say so and keep serving the site instead of crashing into a restart loop.
+async function ensureGas(): Promise<void> {
+  try {
+    if ((await agent.balance()) < 0.4) await agent.fund(0.4);
+  } catch (error) {
+    console.error(
+      `Funding the agent from ${config.sponsorAccountId} failed, top the sponsor up:`,
+      (error as Error).message?.slice(0, 200),
+    );
+  }
+}
 
 // Register with the contract: in a TEE this submits the attestation the contract verifies.
 // Retries slowly, since each failed attempt costs gas while the measurements await approval.
 while (true) {
+  await ensureGas();
   try {
     const isWhitelisted = await agent.isWhitelisted();
     if (isWhitelisted === null || isWhitelisted) {
