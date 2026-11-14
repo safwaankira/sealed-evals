@@ -13,9 +13,14 @@ contract holds it in escrow and pays the author when the score settles, or refun
 | Works, tested | Contract: registry, escrow, agent-only settlement, strict Sealed rule, refunds | `cargo test --lib` (78 tests) |
 | Works, tested | Agent: sealing, NEAR AI attestation + NVIDIA gate, per-answer signature checks, evidence | `npm test` (19 tests, end to end against mocks) |
 | Works | Web app: leaderboard, seal, pay-to-run, in-browser re-verification, tamper button | no wallet needed to view or verify |
-| Pending | Live Shade Agent on Phala + testnet contract, with real runs | links added here once deployed |
+| Live | Shade Agent in a Phala TEE (TDX attestation verified on chain), testnet contract, real Sealed runs | [live app](https://3b921399f8f3e3c252e4ab9b2edf86f9143e7633-3000.dstack-pha1-prod9.phala.network) · [contract](https://testnet.nearblocks.io/address/sealed-evals.occasionally-how.testnet) |
 
 One command for all of it: `npm run judge`.
+
+**Try it (no wallet needed to verify):**
+- [A Sealed result](https://3b921399f8f3e3c252e4ab9b2edf86f9143e7633-3000.dstack-pha1-prod9.phala.network/#/eval/1): Qwen3.8-27B, 94.9% on 39 hidden questions, 39/39 answers signed, author paid 0.05 NEAR. Your browser re-checks it; press **Tamper test** to watch the checks fail.
+- [A refused run](https://3b921399f8f3e3c252e4ab9b2edf86f9143e7633-3000.dstack-pha1-prod9.phala.network/#/eval/5): a model that isn't served from an attested TEE, refused before any question left, refunded.
+- [Trust page](https://3b921399f8f3e3c252e4ab9b2edf86f9143e7633-3000.dstack-pha1-prod9.phala.network/#/trust): the agent's measurements and the seal key, as the contract sees them.
 
 Benchmarks stop meaning anything once their questions leak into training data. Sealed Evals keeps the
 questions inside attested hardware for their whole life:
