@@ -38,7 +38,7 @@ export function ModeBadge({ mode, size = "md" }) {
   const cls = sealed ? "bg-sealed-bg text-sealed border-sealed/30" : "bg-leak-bg text-leak border-leak/30";
   const pad = size === "sm" ? "px-2 py-0.5 caption-3" : "px-2 py-1 caption-3";
   return (
-    <span className={`inline-flex items-center gap-1 rounded-md border ${cls} ${pad} uppercase tracking-wide`}>
+    <span className={`inline-flex shrink-0 items-center gap-1 rounded-md border ${cls} ${pad}`}>
       {sealed ? <LockKey size={12} weight="bold" aria-hidden /> : <Warning size={12} weight="bold" aria-hidden />}
       {sealed ? "Sealed" : "Leak risk"}
     </span>
@@ -107,3 +107,28 @@ export function Field({ label, hint, children }) {
 
 export const inputCls =
   "w-full rounded-lg border border-line bg-void px-3 py-2 body-6 text-ink placeholder:text-faint transition duration-300 ease-weighted hover:border-[#4a4a4a] focus:border-sealed focus:outline-none";
+
+/**
+ * One square per hidden question. Filled means that answer carries a signature from the attested
+ * model TEE. Which answers were right is never shown: that would leak the key.
+ */
+export function SignatureGrid({ total, signed, tone = "sealed", className = "" }) {
+  const ref = useReveal();
+  const on = tone === "sealed" ? "bg-sealed" : "bg-leak";
+  return (
+    <div
+      ref={ref}
+      className={`sig-grid grid w-fit grid-cols-[repeat(13,12px)] gap-1 ${className}`}
+      role="img"
+      aria-label={`${signed} of ${total} answers signed by the attested model`}
+    >
+      {Array.from({ length: total }, (_, i) => (
+        <span
+          key={i}
+          className={`sig-cell h-3 w-3 rounded-sm ${i < signed ? on : "bg-hover"}`}
+          style={{ transitionDelay: `${Math.min(i * 12, 400)}ms` }}
+        />
+      ))}
+    </div>
+  );
+}

@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { verifyMessage } from "ethers";
-import { CheckCircle, XCircle, CircleNotch, ArrowSquareOut, DownloadSimple } from "@phosphor-icons/react";
+import { CheckCircle, XCircle, CircleNotch, ArrowSquareOut, DownloadSimple, ArrowLeft, ArrowRight, ArrowCounterClockwise } from "@phosphor-icons/react";
 import { useAsync, useWallet } from "../lib/hooks";
 import { view, call, getConfig, explorerAccount } from "../lib/near";
 import { apiGetRaw } from "../lib/api";
 import { pct, ago, yoctoToNear, short, sha256HexOf } from "../lib/format";
-import { Button, Card, ErrorNote, ModeBadge, Mono, Skeleton, StatusBadge } from "../components/ui";
+import { Button, Card, ErrorNote, LinkButton, ModeBadge, Mono, Skeleton, StatusBadge, SignatureGrid } from "../components/ui";
 
 const TIMEOUT_MS = 60 * 60 * 1000;
 
@@ -20,7 +20,7 @@ export default function EvalPage({ id }) {
 
   if (ev.loading && !ev.data) {
     return (
-      <section className="mx-auto mt-12 flex max-w-4xl flex-col gap-4 px-4 pt-24">
+      <section className="mx-auto flex mt-12 max-w-4xl flex-col gap-4 px-4 pt-24">
         <Skeleton className="h-10 w-64" />
         <Skeleton className="h-40 w-full" />
         <Skeleton className="h-64 w-full" />
@@ -38,16 +38,27 @@ export default function EvalPage({ id }) {
   const r = e.result;
 
   return (
-    <section className="mx-auto mt-12 flex max-w-4xl flex-col gap-4 px-4 pt-24">
-      <div className="flex flex-col gap-2">
-        <span className="caption-4 text-muted">
-          Eval #{e.id} · <a className="hover:text-ink underline" href={`#/benchmark/${b.id}`}>{b.name}</a> · requested {ago(e.created_ms)}
-        </span>
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="heading-5 md:heading-4 break-all">{e.model}</h1>
-          <StatusBadge status={e.status} />
-          {r ? <ModeBadge mode={r.mode} /> : null}
+    <section className="mx-auto flex mt-12 max-w-4xl flex-col gap-4 px-4 pt-24">
+      <a href="#/" className="inline-flex w-fit items-center gap-1 caption-1 text-muted transition duration-300 ease-weighted hover:text-ink">
+        <ArrowLeft size={14} aria-hidden /> Leaderboard
+      </a>
+      <div className="flex flex-col gap-4 pb-4 md:flex-row md:items-end md:justify-between">
+        <div className="flex min-w-0 flex-col gap-2">
+          <span className="caption-4 text-muted">
+            Eval #{e.id} · <a className="underline hover:text-ink" href={`#/benchmark/${b.id}`}>{b.name}</a> · requested {ago(e.created_ms)}
+          </span>
+          <h1 className="heading-5 break-all md:heading-4">{e.model}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={e.status} />
+            {r ? <ModeBadge mode={r.mode} /> : null}
+          </div>
         </div>
+        {e.status !== "Pending" && b.sealed && b.active ? (
+          <LinkButton href={`#/run?benchmark=${b.id}`} className="shrink-0 self-start md:self-auto">
+            Run another model
+            <ArrowRight size={16} weight="bold" aria-hidden />
+          </LinkButton>
+        ) : null}
       </div>
 
       {e.status === "Pending" ? <PendingCard e={e} accountId={accountId} onReclaimed={ev.reload} /> : null}
@@ -61,22 +72,34 @@ export default function EvalPage({ id }) {
 
       {r ? (
         <>
-          <Card className="grid gap-6 p-6 md:grid-cols-3">
-            <div className="flex flex-col gap-1">
-              <span className="caption-4 text-muted">Score</span>
-              <span className="font-mono heading-2">{pct(r.score_bps)}</span>
-              <span className="caption-2 text-muted">{r.correct} of {r.total} correct</span>
+          <Card className="flex flex-col gap-6 p-6">
+            <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+              <div className="flex flex-col gap-1">
+                <span className="caption-4 text-muted">Score</span>
+                <span className="tnum font-mono heading-1">{pct(r.score_bps)}</span>
+                <span className="caption-2 text-muted">{r.correct} of {r.total} correct</span>
+              </div>
+              <div className="flex flex-col gap-2">
+                <SignatureGrid total={r.total} signed={r.verified_responses} tone={r.mode === "Sealed" ? "sealed" : "leak"} />
+                <span className="max-w-80 caption-5 text-muted">
+                  One square per hidden question, lit when the answer carries the attested model's signature. Which ones were right stays sealed.
+                </span>
+              </div>
             </div>
-            <div className="flex flex-col gap-1">
-              <span className="caption-4 text-muted">Signed answers</span>
-              <span className="font-mono heading-4">{r.verified_responses}/{r.total}</span>
-              <span className="caption-2 text-muted">carry a signature from an attested TEE key</span>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="caption-4 text-muted">Paid to the author</span>
-              <span className="font-mono heading-4">{yoctoToNear(e.paid)} NEAR</span>
-              <span className="caption-2 text-muted">settled {ago(r.completed_ms)}</span>
-            </div>
+            <dl className="grid gap-4 border-t border-line pt-6 sm:grid-cols-3">
+              <div className="flex flex-col gap-1">
+                <dt className="caption-4 text-muted">Signed answers</dt>
+                <dd className="tnum font-mono title-1">{r.verified_responses}/{r.total}</dd>
+              </div>
+              <div className="flex flex-col gap-1">
+                <dt className="caption-4 text-muted">Paid to the author</dt>
+                <dd className="tnum font-mono title-1">{yoctoToNear(e.paid)} NEAR</dd>
+              </div>
+              <div className="flex flex-col gap-1">
+                <dt className="caption-4 text-muted">Settled on chain</dt>
+                <dd className="title-1">{ago(r.completed_ms)}</dd>
+              </div>
+            </dl>
           </Card>
           <Verify e={e} b={b} />
         </>
@@ -222,14 +245,27 @@ function Verify({ e, b }) {
 
   return (
     <Card className="flex flex-col gap-4 p-6">
-      <div className="flex flex-col gap-1">
-        <h2 className="heading-6">Checked in your browser</h2>
-        <p className="body-6 text-muted">
-          Your browser fetched the evidence, hashed it against the chain and checked every answer signature itself.
-          The NVIDIA line relies on tokens the agent saved; download the evidence to verify them against NVIDIA's keys.
-          The evidence holds hashes and signatures only, never questions or answers.
-        </p>
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="flex max-w-[560px] flex-col gap-1">
+          <h2 className="heading-6">Checked in your browser</h2>
+          <p className="body-6 text-muted">
+            Your browser fetched the evidence, hashed it against the chain and checked every answer signature itself.
+            The NVIDIA line relies on tokens the agent saved, so download the evidence to verify them against NVIDIA's keys.
+            The evidence holds hashes and signatures only, never questions or answers.
+          </p>
+        </div>
+        {ev ? (
+          <Button variant={tampered ? "primary" : "secondary"} size="sm" className="shrink-0 self-start" onClick={() => setTampered((t) => !t)}>
+            {tampered ? <ArrowCounterClockwise size={14} weight="bold" aria-hidden /> : null}
+            {tampered ? "Restore the real evidence" : "Tamper test: flip one character"}
+          </Button>
+        ) : null}
       </div>
+      {tampered ? (
+        <p role="status" className="rounded-lg border border-bad/30 bg-bad-bg px-3 py-2 body-6 text-bad">
+          One character of the evidence was changed in your browser. The checks below now fail, as they would for a forged result.
+        </p>
+      ) : null}
       {s.error ? <ErrorNote error={s.error} /> : null}
       <ul className="flex flex-col divide-y divide-line">
         <Check ok={s.loading ? null : s.evHashOk} label="Evidence file matches the hash settled on chain" detail={r.evidence_hash} />
@@ -258,15 +294,12 @@ function Verify({ e, b }) {
         )}
       </ul>
       {ev ? (
-        <div className="flex flex-wrap gap-2 border-t border-line pt-4">
+        <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
           <Button variant="secondary" size="sm" onClick={() => download(s.evText, `sealed-eval-${e.id}-evidence.json`)}>
             <DownloadSimple size={14} aria-hidden /> Evidence
           </Button>
           <Button variant="secondary" size="sm" onClick={() => download(s.atText, `sealed-eval-${e.id}-attestation.json`)}>
             <DownloadSimple size={14} aria-hidden /> Attestation report
-          </Button>
-          <Button variant={tampered ? "primary" : "ghost"} size="sm" onClick={() => setTampered((t) => !t)}>
-            {tampered ? "Restore the real evidence" : "Flip one character to test the checks"}
           </Button>
           <AgentLink account={r.agent} />
         </div>

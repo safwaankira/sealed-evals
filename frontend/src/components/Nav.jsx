@@ -5,8 +5,9 @@ import { connectWallet, disconnectWallet, initWallet } from "../lib/near";
 import { short } from "../lib/format";
 
 const LINKS = [
-  { href: "#/", label: "Leaderboard", match: (p) => p === "/" || p.startsWith("/benchmark") },
-  { href: "#/run", label: "Run an eval", match: (p) => p.startsWith("/run") || p.startsWith("/eval") },
+  // a result page belongs to the leaderboard it ranks on, so "Run an eval" always reads as a fresh form
+  { href: "#/", label: "Leaderboard", match: (p) => p === "/" || p.startsWith("/benchmark") || p.startsWith("/eval") },
+  { href: "#/run", label: "Run an eval", match: (p) => p.startsWith("/run") },
   { href: "#/seal", label: "Seal a benchmark", match: (p) => p.startsWith("/seal") },
   { href: "#/trust", label: "Trust", match: (p) => p.startsWith("/trust") },
 ];

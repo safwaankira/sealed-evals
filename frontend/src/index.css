@@ -88,6 +88,30 @@ p, li { text-wrap: pretty; }
 }
 .reveal.in { opacity: 1; transform: none; }
 
+/* fine grain over the flat black, so large dark areas don't read as empty */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* signature grid squares settle in one after another */
+.sig-cell { opacity: 0; transform: scale(0.6); transition: opacity 500ms var(--ease-weighted), transform 500ms var(--ease-weighted); }
+.sig-grid.in .sig-cell { opacity: 1; transform: none; }
+
+/* score bars grow from the left */
+.bar { transform-origin: left; transform: scaleX(0); transition: transform 800ms var(--ease-weighted); }
+.in .bar { transform: scaleX(1); }
+
+/* redaction bars: the hidden questions */
+.redact { background: #313131; border-radius: 4px; height: 12px; }
+
 .word { color: rgb(255 255 255 / 0.3); transition: color 500ms var(--ease-weighted); }
 .word.on { color: #ffffff; }
 
@@ -102,4 +126,5 @@ p, li { text-wrap: pretty; }
   .reveal { opacity: 1; transform: none; transition: none; }
   .word { transition: none; color: #ffffff; }
   .skeleton { animation: none; }
+  .sig-cell, .bar { transition: none; opacity: 1; transform: none; }
 }
