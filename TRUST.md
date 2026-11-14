@@ -59,7 +59,7 @@ software running inside it. That applies to this agent's code too. What Sealed E
 
 ```bash
 npm run judge                                       # everything below in one command
-npm ci && npm test                                  # 19 agent tests, incl. end-to-end with mock NEAR AI + NVIDIA
+npm ci && npm test                                  # 22 agent tests, incl. end-to-end with mock NEAR AI + NVIDIA
 cd agent-contract && cargo test --lib               # 78 contract tests
 ```
 
