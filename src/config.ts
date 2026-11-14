@@ -25,11 +25,35 @@ export const config = {
   maxTokens: Number(process.env.MAX_TOKENS || "1024"),
   itemConcurrency: Number(process.env.ITEM_CONCURRENCY || "4"),
   /** Operator cost limits: the operator's NEAR AI key pays for inference */
-  maxRunItems: Number(process.env.MAX_RUN_ITEMS || "500"),
+  maxRunItems: Number(process.env.MAX_RUN_ITEMS || "60"),
+  /** At most this many runs that actually send questions, per UTC day (resets on reboot too) */
+  maxRunsPerDay: Number(process.env.MAX_RUNS_PER_DAY || "30"),
+  /**
+   * Whose benchmarks this agent will seal and run, and which models it will send questions to.
+   * The defaults live in code, so they are part of the measured build anyone can check. "*" = any.
+   */
+  allowedAuthors: list(process.env.ALLOWED_AUTHORS ?? "pupil-wherever-author.testnet"),
+  allowedModels: list(
+    process.env.ALLOWED_MODELS ??
+      [
+        "Qwen/Qwen3.8-27B",
+        "Qwen/Qwen3.6-35B-A3B-FP8",
+        "z-ai/glm-5.3-flash",
+        "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        "z-ai/glm-5.3",
+        "moonshotai/kimi-k2.6",
+      ].join(","),
+  ),
   minPricePerItemYocto: BigInt(process.env.MIN_PRICE_PER_ITEM_YOCTO || "1000000000000000000000"), // 0.001 NEAR
   /** Leaving this unset in local mode is fine; it only seeds the non-TEE fallback keys. */
   localSealSecret: process.env.LOCAL_SEAL_SECRET || "",
   publicDir: process.env.PUBLIC_DIR || "./public",
 };
+
+function list(v: string): string[] | "*" {
+  const t = v.trim();
+  return t === "*" ? "*" : t.split(",").map((x) => x.trim()).filter(Boolean);
+}
+export const allows = (l: string[] | "*", v: string) => l === "*" || l.includes(v);
 
 export const VERSION = "0.1.0";

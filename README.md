@@ -56,7 +56,7 @@ NEAR contract ◀── register_agent(TDX attestation, verified on chain) ─�
 * The author's leak-risk policy is snapshotted when a run is paid for. Evidence is only served once a run settles, and holds no per-item correctness.
 * `GET /api/seal-key?nonce=<32 bytes hex>` returns a fresh quote with `report_data = sha256(sha256("sealed-evals:seal-key:v1:<pk>") ":" nonce)`.
 * Requesters can `reclaim_eval` their escrow if the agent doesn't answer within an hour (longer once the agent has claimed the run, scaled by item count).
-* Operator limits (env): `MAX_RUN_ITEMS` (default 500) and `MIN_PRICE_PER_ITEM_YOCTO` (default 0.001 NEAR), because the operator's NEAR AI key pays for inference.
+* Operator limits, because the operator's NEAR AI key pays for inference: approved benchmark authors, a short list of open models, at most 60 questions per run and 30 runs a day, and a minimum of 0.001 NEAR per question. The defaults are in `src/config.ts`, so they are part of the measured build, and `/api/agent-info` reports them. Anything outside them is refused and refunded before a question is sent.
 
 Full claim by claim breakdown with the code and tests behind each: **[TRUST.md](TRUST.md)**.
 Every result page re-checks the run in the browser, and a "Flip one character" button shows the checks catching a tampered evidence file.

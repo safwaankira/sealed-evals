@@ -16,6 +16,9 @@ export default function Run({ preselect }) {
     return list.filter((b) => b.sealed && b.active);
   }, []);
   const models = useAsync(async () => (await apiGet("/models")).models ?? [], []);
+  const cfg = useAsync(getConfig, []);
+  const allowed = cfg.data?.agent?.limits?.allowed_models;
+  const allowList = Array.isArray(allowed) ? allowed : null;
 
   const [benchmarkId, setBenchmarkId] = useState(preselect ?? "");
   const [model, setModel] = useState("");
@@ -97,7 +100,11 @@ export default function Run({ preselect }) {
 
           <Field
             label="Model"
-            hint="Models served from NEAR AI Cloud TEEs run Sealed. The agent checks this with a fresh attestation before sending anything."
+            hint={
+              allowList
+                ? `This agent sends questions to ${allowList.length} open models: ${allowList.join(", ")}. It checks each with a fresh attestation first. Any other model is refused and refunded before a question leaves.`
+                : "Models served from NEAR AI Cloud TEEs run Sealed. The agent checks this with a fresh attestation before sending anything."
+            }
           >
             {models.loading && !models.data ? (
               <Skeleton className="h-10 w-full" />
@@ -112,7 +119,7 @@ export default function Run({ preselect }) {
                   autoComplete="off"
                 />
                 <datalist id="models">
-                  {(models.data ?? []).map((m) => (
+                  {(allowList ? allowList.map((id) => ({ id })) : models.data ?? []).map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.owned_by ? `${m.owned_by}` : ""}
                     </option>

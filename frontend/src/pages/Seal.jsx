@@ -31,6 +31,9 @@ export default function Seal({ existingId }) {
       bindingOk: !!match && k.report_data === sealKeyReportData(k.public_key),
     };
   }, []);
+  const cfg = useAsync(getConfig, []);
+  const limits = cfg.data?.agent?.limits;
+  const authorBlocked = limits && limits.allowed_authors !== "*" && !(accountId && limits.allowed_authors.includes(accountId));
   const existing = useAsync(async () => (existingId ? view("get_benchmark", { benchmark_id: existingId }) : null), [existingId]);
 
   const [file, setFile] = useState(null); // { name, bytes, hash, items }
@@ -141,6 +144,16 @@ export default function Seal({ existingId }) {
         hash. Once sealed, you earn your price every time someone runs it.
       </p>
 
+      {authorBlocked ? (
+        <p role="status" className="mb-4 flex items-start gap-2 rounded-lg border border-leak/30 bg-leak-bg px-3 py-3 body-6 text-leak">
+          <Warning size={16} weight="bold" className="mt-0.5 shrink-0" aria-hidden />
+          <span>
+            This hackathon agent pays for model calls itself, so it only seals benchmarks from approved authors
+            {accountId ? "" : " (connect your wallet to check)"}. Anyone can verify the scores, run the existing benchmark, or deploy their own agent from the open source repo.
+          </span>
+        </p>
+      ) : null}
+
       <SealKeyCard sealKey={sealKey} />
 
       <Card className="mt-4 p-6">
@@ -149,7 +162,7 @@ export default function Seal({ existingId }) {
             label="Benchmark file"
             hint={
               <>
-                JSON with an items array of prompt and answer pairs, up to 2,000 items (this agent runs up to 500 per eval).{" "}
+                JSON with an items array of prompt and answer pairs, up to 2,000 items (this agent runs up to {limits?.max_run_items ?? 60} per eval).{" "}
                 <a href="/sample-benchmark.json" download className="inline-flex items-center gap-1 text-ink underline">
                   <DownloadSimple size={12} aria-hidden /> Practice file
                 </a>{" "}

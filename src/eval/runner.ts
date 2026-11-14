@@ -2,7 +2,7 @@
 // publish evidence (hashes and signatures only) and settle on chain.
 
 import { agent } from "../near/agent";
-import { config, VERSION } from "../config";
+import { allows, config, VERSION } from "../config";
 import { DEFAULT_SYSTEM, grade, parseBenchmark } from "../shared/benchmark";
 import { sha256Hex } from "../shared/envelope";
 import { attestModel, chat, checkSignature, type ModelAttestation } from "../nearai/client";
@@ -74,6 +74,20 @@ async function submit(evalId: string, evidenceJson: string): Promise<void> {
   });
 }
 
+// runs that sent questions today (UTC); in memory, so a reboot also resets it
+let day = "";
+let runsToday = 0;
+function takeDailyRun(): boolean {
+  const today = new Date().toISOString().slice(0, 10);
+  if (today !== day) {
+    day = today;
+    runsToday = 0;
+  }
+  if (runsToday >= config.maxRunsPerDay) return false;
+  runsToday++;
+  return true;
+}
+
 export async function runEval(ev: EvalView, benchmark: BenchmarkView): Promise<void> {
   const evalId = ev.id;
   const started = new Date().toISOString();
@@ -109,6 +123,9 @@ export async function runEval(ev: EvalView, benchmark: BenchmarkView): Promise<v
   }
 
   // Operator policy: the operator's NEAR AI key pays for inference, so refuse runs it can't afford
+  if (!allows(config.allowedAuthors, benchmark.author)) {
+    return failEval(evalId, "This agent only runs benchmarks from approved authors. No questions were sent. Refunded.");
+  }
   if (file.items.length > config.maxRunItems) {
     return failEval(evalId, `This agent runs at most ${config.maxRunItems} items per eval. No questions were sent. Refunded.`);
   }
@@ -129,6 +146,15 @@ export async function runEval(ev: EvalView, benchmark: BenchmarkView): Promise<v
       evalId,
       `${attestation.reason ?? "Model is not attested"}, and the author does not allow leak-risk runs. No questions were sent. Refunded.`,
     );
+  }
+  if (!allows(config.allowedModels, ev.model)) {
+    return failEval(
+      evalId,
+      `This agent only sends questions to: ${(config.allowedModels as string[]).join(", ")}. No questions were sent. Refunded.`,
+    );
+  }
+  if (!takeDailyRun()) {
+    return failEval(evalId, `This agent's limit of ${config.maxRunsPerDay} runs a day is used up. No questions were sent. Refunded.`);
   }
   const mode = attestation.sealed ? "Sealed" : "LeakRisk";
   console.log(`eval ${evalId}: ${benchmark.item_count} items on ${ev.model} as ${mode}`);

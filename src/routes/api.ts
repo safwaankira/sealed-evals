@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { agent } from "../near/agent";
-import { config, VERSION } from "../config";
+import { allows, config, VERSION } from "../config";
 import { keys, freshSealKeyQuote } from "../tee/keys";
 import { envelopeAad, openFromTee, sha256Hex, type SealedEnvelope } from "../shared/envelope";
 import { LIMITS, parseBenchmark } from "../shared/benchmark";
@@ -46,6 +46,13 @@ api.get("/agent-info", async (c) => {
     // these, and the contract re-checks them against the hardware quote at registration.
     measurements: k.measurements,
     registered: isRegistered(),
+    // what this operator pays NEAR AI for; anything else is refused and refunded before a question is sent
+    limits: {
+      allowed_authors: config.allowedAuthors,
+      allowed_models: config.allowedModels,
+      max_run_items: config.maxRunItems,
+      max_runs_per_day: config.maxRunsPerDay,
+    },
     worker: workerStatus(),
   });
 });
@@ -93,6 +100,9 @@ api.post(
     const benchmark = (await agent().view<any>({ methodName: "get_benchmark", args: { benchmark_id: id } })) as BenchmarkView | null;
     if (!benchmark) return c.json({ error: "Benchmark is not registered on chain" }, 404);
     if (!benchmark.active) return c.json({ error: "Benchmark is retired" }, 409);
+    if (!allows(config.allowedAuthors, benchmark.author)) {
+      return c.json({ error: "This agent only seals benchmarks from approved authors. Nothing was stored." }, 403);
+    }
 
     let envelope: SealedEnvelope;
     try {

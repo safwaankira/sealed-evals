@@ -151,6 +151,17 @@ test("upload rejects a file whose hash differs from the chain", async () => {
   assert.match((await res.json()).error, /set_hash/);
 });
 
+test("upload refuses benchmarks from authors outside the operator's list", async () => {
+  const { sealToTee, envelopeAad } = mods.envelope;
+  benchmark.author = "stranger.testnet";
+  try {
+    const res = await upload("0", sealToTee(new Uint8Array(sample), mods.keys.keys().sealPublicKeyHex, envelopeAad("sealed.testnet", 0)));
+    assert.equal(res.status, 403);
+  } finally {
+    benchmark.author = "author.testnet";
+  }
+});
+
 test("author seals the benchmark", async () => {
   const { sealToTee, envelopeAad } = mods.envelope;
   const res = await upload("0", sealToTee(new Uint8Array(sample), mods.keys.keys().sealPublicKeyHex, envelopeAad("sealed.testnet", 0)));
@@ -237,6 +248,20 @@ test("runs priced below the operator minimum are refused before any question", a
   await mods.runner.runEval({ ...ev("5", "tee/cheap"), paid: "1" }, { ...benchmark });
   assert.match(calls[0].args.reason, /minimum/);
   assert.equal(promptsSeenBy.get("tee/cheap") ?? 0, 0);
+});
+
+test("models outside the operator's list are refused before any question", async () => {
+  calls.length = 0;
+  await mods.runner.runEval(ev("6", "tee/pricey"), { ...benchmark });
+  assert.equal(calls[0].methodName, "fail_eval");
+  assert.match(calls[0].args.reason, /only sends questions to/);
+  assert.equal(promptsSeenBy.get("tee/pricey") ?? 0, 0);
+});
+
+test("benchmarks from authors outside the operator's list are refused", async () => {
+  calls.length = 0;
+  await mods.runner.runEval(ev("7", "tee/qwen"), { ...benchmark, author: "stranger.testnet" });
+  assert.match(calls[0].args.reason, /approved authors/);
 });
 
 test("evidence is served over the API", async () => {
