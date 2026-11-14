@@ -6,8 +6,7 @@ services:
       SPONSOR_PRIVATE_KEY: ${SPONSOR_PRIVATE_KEY}
       NEARAI_CLOUD_API_KEY: ${NEARAI_CLOUD_API_KEY}
     platform: linux/amd64
-    # replaced with the built image digest by `shade deploy`
-    image: sealed-evals:local
+    image: predaconus/sealed-evals@sha256:10e41c045286aa71653e13c236552b33e3d43e7dc8dc54e168710d97d5b75290
     container_name: sealed-evals
     ports:
       - 3000:3000
@@ -15,6 +14,5 @@ services:
       - /var/run/dstack.sock:/var/run/dstack.sock
       - sealed-data:/data
     restart: always
-
 volumes:
-  sealed-data:
+  sealed-data: null
