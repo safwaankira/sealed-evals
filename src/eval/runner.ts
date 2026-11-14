@@ -184,6 +184,11 @@ export async function runEval(ev: EvalView, benchmark: BenchmarkView): Promise<v
   }, () => broken);
 
   const total = file.items.length;
+  const requestFailures = records.filter((r) => r?.error).length;
+  if (attestation.sealed && requestFailures > 0) {
+    // the model never answered (e.g. provider out of credits): say so instead of blaming signatures
+    return failEval(evalId, `The model did not answer ${requestFailures} request(s), so the run was stopped and not scored. Refunded.`);
+  }
   if (attestation.sealed && (broken || records.some((r) => !r || !r.signature_verified))) {
     return failEval(evalId, "An answer could not be tied to the attested model, so the run was stopped and not scored. Refunded.");
   }
